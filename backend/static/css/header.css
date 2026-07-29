@@ -1,0 +1,99 @@
+.header{
+
+    height:82px;
+
+    background:var(--sidebar-bg);
+
+    border-bottom:1px solid var(--border);
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    padding:0 35px;
+
+}
+
+/* ---------- Left ---------- */
+
+.header-left h1{
+
+    font-size:22px;
+
+    font-weight:700;
+
+    color:var(--text);
+
+}
+
+.header-left p{
+
+    margin-top:3px;
+
+    font-size:13px;
+
+    color:var(--text-light);
+
+}
+
+/* ---------- Right ---------- */
+
+.header-right{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:18px;
+
+}
+
+.theme-btn{
+
+    width:42px;
+
+    height:42px;
+
+    border:none;
+
+    border-radius:12px;
+
+    background:#F6F7FB;
+
+    cursor:pointer;
+
+    transition:.25s;
+
+    font-size:18px;
+
+}
+
+.theme-btn:hover{
+
+    background:#ECE8FF;
+
+}
+
+.profile-btn{
+
+    width:42px;
+
+    height:42px;
+
+    border:none;
+
+    border-radius:50%;
+
+    background:#7C3AED;
+
+    color:white;
+
+    font-size:16px;
+
+    font-weight:700;
+
+    cursor:pointer;
+
+}

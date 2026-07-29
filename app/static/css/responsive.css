@@ -1,0 +1,71 @@
+@media (max-width: 900px) {
+
+    :root{
+        --sidebar-width: 88px;
+    }
+
+    .sidebar{
+        padding:18px 12px;
+    }
+
+    .brand-content,
+    .sidebar-bottom,
+    .nav-item span:last-child{
+        display:none;
+    }
+
+    .sidebar-brand{
+        justify-content:center;
+        margin-bottom:28px;
+    }
+
+    .nav-item{
+        justify-content:center;
+        padding:14px;
+    }
+
+    .chat-area{
+        padding:28px 20px;
+    }
+
+    .chat-input{
+        padding:14px 16px;
+    }
+
+    .header{
+        padding:0 20px;
+    }
+
+    .header-left p{
+        display:none;
+    }
+
+}
+
+@media (max-width: 640px) {
+
+    .sidebar{
+        display:none;
+    }
+
+    .message-content,
+    .status-content{
+        max-width:88%;
+    }
+
+    .input-wrapper{
+        gap:10px;
+        padding:10px;
+    }
+
+    .icon-btn{
+        width:42px;
+        height:42px;
+    }
+
+    .send-btn{
+        width:44px;
+        height:44px;
+    }
+
+}
