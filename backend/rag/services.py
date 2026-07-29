@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 
 from rag.prompts import (
@@ -7,6 +9,8 @@ from rag.prompts import (
 
 from rag.providers.nvidia import NVIDIAProvider
 from rag.providers.qdrant import QdrantProvider
+
+logger = logging.getLogger(__name__)
 
 nvidia = NVIDIAProvider()
 qdrant = QdrantProvider()
@@ -80,21 +84,34 @@ qdrant = QdrantProvider()
 NOT_FOUND = "I couldn't find information about this in the knowledge base."
 
 
+def rerank(question, results):
+    """The reranker is the relevance gate; vector order is only a safety net."""
+
+    try:
+        return nvidia.rerank(
+            question,
+            results,
+            top_n=settings.RAG_TOP_N,
+            floor=settings.RAG_RERANK_FLOOR,
+        )
+    except Exception as exc:
+        logger.warning("Reranking unavailable, keeping fused order: %s", exc)
+        return results[: settings.RAG_TOP_N]
+
+
 def answer_question(question):
 
     question_embedding = nvidia.generate_embedding(question)
 
     results = qdrant.search_chunks(
         question_embedding=question_embedding,
+        question=question,
     )
     print("Results:", results)
 
-    threshold = getattr(settings, "RAG_MIN_SCORE", 0.70)
+    results = rerank(question, results)
+    print("Rerank results:", results)
 
-    # Filter every chunk, not just the best one. Previously a single strong hit
-    # dragged the whole low-scoring tail into the prompt, and the model padded
-    # its answer with whatever that noise suggested.
-    results = [chunk for chunk in results if chunk["score"] >= threshold]
 
     if not results:
         return {
@@ -104,7 +121,7 @@ def answer_question(question):
 
     prompt = build_prompt(
         question=question,
-        chunks=results,
+        chunks=qdrant.with_neighbours(results),
     )
 
     answer = nvidia.generate_answer(

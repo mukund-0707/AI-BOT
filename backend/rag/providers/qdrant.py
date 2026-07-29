@@ -4,6 +4,12 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
     VectorParams,
+    SparseVector,
+    SparseVectorParams,
+    Modifier,
+    Prefetch,
+    FusionQuery,
+    Fusion,
     PointStruct,
     Filter,
     FieldCondition,
@@ -14,15 +20,40 @@ from qdrant_client.http.exceptions import (
     UnexpectedResponse,
 )
 
+import re
 import uuid
+import zlib
+from collections import Counter
 
 # Namespace for deterministic point ids. Re-indexing a document then overwrites
 # its existing points instead of inserting a second copy of every chunk.
 POINT_NAMESPACE = uuid.UUID("6f2d1c4e-9a3b-4f5e-8c7d-1b2a3c4d5e6f")
 
+DENSE = "dense"
+SPARSE = "text"
+
+# Keeps ids, emails, versions and error codes as single tokens.
+TOKEN = re.compile(r"[a-z0-9_.@+-]{2,}")
+
 
 def point_id(document_id, chunk_index):
     return str(uuid.uuid5(POINT_NAMESPACE, f"{document_id}:{chunk_index}"))
+
+
+def sparse_vector(text):
+    """Term frequencies keyed by a hash of each token.
+
+    Qdrant applies IDF server-side, so rare literals - an AWS account number,
+    a repo name - dominate the match. That is exactly what dense embeddings
+    are worst at, which is why the two retrievers are fused rather than ranked.
+    """
+
+    counts = Counter(TOKEN.findall(text.lower()))
+
+    return SparseVector(
+        indices=[zlib.crc32(token.encode()) for token in counts],
+        values=[float(count) for count in counts.values()],
+    )
 
 
 class VectorStoreUnavailable(Exception):
@@ -66,10 +97,15 @@ class QdrantProvider:
 
             self.client.create_collection(
                 collection_name=settings.QDRANT_COLLECTION_NAME,
-                vectors_config=VectorParams(
-                    size=vector_size,
-                    distance=Distance.COSINE,
-                ),
+                vectors_config={
+                    DENSE: VectorParams(
+                        size=vector_size,
+                        distance=Distance.COSINE,
+                    ),
+                },
+                sparse_vectors_config={
+                    SPARSE: SparseVectorParams(modifier=Modifier.IDF),
+                },
             )
         except ResponseHandlingException as exc:
             raise connection_error() from exc
@@ -88,7 +124,10 @@ class QdrantProvider:
             points.append(
                 PointStruct(
                     id=point_id(document.id, chunk["chunk_index"]),
-                    vector=embedding,
+                    vector={
+                        DENSE: embedding,
+                        SPARSE: sparse_vector(chunk["text"]),
+                    },
                     payload={
                         "document_id": document.id,
                         "file_name": document.original_name,
@@ -98,7 +137,7 @@ class QdrantProvider:
                     },
                 )
             )
-
+        # print("POINTS \n", points)
         try:
             self.client.upsert(
                 collection_name=settings.QDRANT_COLLECTION_NAME,
@@ -110,16 +149,33 @@ class QdrantProvider:
     def search_chunks(
         self,
         question_embedding,
-        limit=8,
+        question,
+        limit=24,
     ):
+        """Fetch candidates for the reranker - recall matters here, not order.
+
+        Dense retrieval alone ranks an exact identifier like an AWS account
+        number around 7th; the keyword side puts it 1st. Reciprocal Rank Fusion
+        runs server-side, so neither retriever has to win outright.
+        """
 
         try:
-            # Over-fetch so that dropping duplicates still leaves `limit`
-            # distinct chunks to answer from.
             results = self.client.query_points(
                 collection_name=settings.QDRANT_COLLECTION_NAME,
-                query=question_embedding,
-                limit=limit * 3,
+                prefetch=[
+                    Prefetch(
+                        query=question_embedding,
+                        using=DENSE,
+                        limit=limit,
+                    ),
+                    Prefetch(
+                        query=sparse_vector(question),
+                        using=SPARSE,
+                        limit=limit,
+                    ),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=limit,
             )
         except ResponseHandlingException as exc:
             raise connection_error() from exc
@@ -146,18 +202,61 @@ class QdrantProvider:
             output.append(
                 {
                     "score": point.score,
+                    "document_id": point.payload["document_id"],
                     "file_name": point.payload["file_name"],
                     "page_number": point.payload["page_number"],
                     "chunk_index": point.payload["chunk_index"],
                     "text": point.payload["text"],
                 }
             )
-
-            if len(output) >= limit:
-                break
         print("OUTPUT:", output)
 
         return output
+
+    def with_neighbours(self, chunks):
+        """Add the chunk before and after each hit, in document order.
+
+        A section that spans a chunk boundary only ever retrieves its first
+        half: the continuation answers no question on its own, so it ranks far
+        too low to be fetched. Pulling it in by position rather than by score
+        is what keeps a table or a procedure whole.
+        """
+
+        selected = {(chunk["document_id"], chunk["chunk_index"]) for chunk in chunks}
+
+        wanted = {
+            (chunk["document_id"], chunk["chunk_index"] + offset)
+            for chunk in chunks
+            for offset in (-1, 1)
+        } - selected
+
+        try:
+            # Point ids are deterministic, so neighbours can be addressed
+            # directly. Ids past either end of a document simply return nothing.
+            points = self.client.retrieve(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                ids=[point_id(*key) for key in wanted],
+                with_payload=True,
+            )
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
+
+        neighbours = [
+            {
+                "score": None,
+                "document_id": point.payload["document_id"],
+                "file_name": point.payload["file_name"],
+                "page_number": point.payload["page_number"],
+                "chunk_index": point.payload["chunk_index"],
+                "text": point.payload["text"],
+            }
+            for point in points
+        ]
+
+        return sorted(
+            chunks + neighbours,
+            key=lambda chunk: (chunk["file_name"], chunk["chunk_index"]),
+        )
 
     def delete_chunks(self, document_id):
         try:

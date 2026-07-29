@@ -25,7 +25,7 @@ class UploadDocumentView(APIView):
         serializer.is_valid(raise_exception=True)
 
         document = DocumentService.upload(serializer.validated_data["file"])
-        print(document)
+        print("Document:", document)
 
         try:
             DocumentService.process_document(document)

@@ -1,5 +1,6 @@
 import re
 
+import httpx
 from openai import OpenAI
 
 from django.conf import settings
@@ -7,6 +8,8 @@ from django.conf import settings
 # Reasoning models normally return their trace in a separate field, but they
 # occasionally inline it in the answer. Strip it either way.
 THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+RERANK_URL = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
 
 
 def strip_reasoning(text):
@@ -62,6 +65,40 @@ class NVIDIAProvider:
         # print("RESPONSE BATCH: \n", response)
 
         return [item.embedding for item in response.data]
+
+    def rerank(self, question: str, chunks: list[dict], top_n: int, floor: float):
+        """Score every candidate against the question with a cross-encoder.
+
+        Unlike cosine similarity, these logits are comparable across queries,
+        so `floor` can be a constant: relevant passages land around -1 to -6,
+        while a question the corpus cannot answer tops out near -12.
+        """
+
+        if not chunks:
+            return []
+
+        response = httpx.post(
+            RERANK_URL,
+            headers={"Authorization": f"Bearer {settings.NVIDIA_API_KEY}"},
+            json={
+                "model": settings.NVIDIA_RERANK_MODEL,
+                "query": {"text": question},
+                "passages": [{"text": chunk["text"]} for chunk in chunks],
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        rankings = sorted(
+            response.json()["rankings"],
+            key=lambda ranking: -ranking["logit"],
+        )
+
+        return [
+            {**chunks[ranking["index"]], "score": ranking["logit"]}
+            for ranking in rankings[:top_n]
+            if ranking["logit"] >= floor
+        ]
 
     def generate_answer(self, system_prompt: str, user_prompt: str):
 

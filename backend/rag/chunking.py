@@ -69,6 +69,6 @@ def create_chunks(
                 }
             )
             chunk_index += 1
-            print("CRT_CHUNKS: \n", chunks)
+            # print("CRT_CHUNKS: \n", chunks)
 
     return chunks

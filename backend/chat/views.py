@@ -43,17 +43,3 @@ class AskQuestionView(APIView):
             result,
             status=status.HTTP_200_OK,
         )
-
-
-# hi mujeh teri ek helpp chahiye mene ek chatbot create kia hua its okay chal raha he no doubt but vo smart nhi h itna
-
-# means agr tu usko bolega ki mereko summary de brief to vo sare chunks ko padh k summaries nhi kr skta ya respond nhi kr skta
-
-# i mean need a better solution kyuki mere idea kthm ho gaye he isko leke kya krna chahiye
-
-# kyuki query k bases pr chunks aaate he agr tune suppose k brief information de likha kuch nhi aaega vese mene thoda boht optimize kiya hua he ab aaega bt bs handle krvaya he vo sahi me nhi krega
-
-# mereko bta ki kya krna chahiye
-
-
-# chatbot kese optimise karu mujeh better approach de phri me use reiview kruga...

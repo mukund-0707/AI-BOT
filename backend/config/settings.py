@@ -158,13 +158,22 @@ NVIDIA_BASE_URL = os.getenv(
 )
 NVIDIA_CHAT_MODEL = os.getenv("NVIDIA_CHAT_MODEL")
 NVIDIA_EMBEDDING_MODEL = os.getenv("NVIDIA_EMBEDDING_MODEL")
+NVIDIA_RERANK_MODEL = os.getenv(
+    "NVIDIA_RERANK_MODEL",
+    "nvidia/rerank-qa-mistral-4b",
+)
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") or None
+
 QDRANT_COLLECTION_NAME = os.getenv(
     "QDRANT_COLLECTION_NAME",
-    "document_chunks",
+    "document_chunks_v2",
 )
 
 
-RAG_MIN_SCORE = 0.35
+# Chunks handed to the model after reranking.
+RAG_TOP_N = 6
+
+# Calibrated on evaluation data. Recalibrate if the reranker model or corpus changes.
+RAG_RERANK_FLOOR = -11.0
