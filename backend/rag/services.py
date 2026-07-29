@@ -1,7 +1,4 @@
 from django.conf import settings
-from docx import document
-
-from documents.models import Document
 
 from rag.prompts import (
     SYSTEM_PROMPT,
@@ -80,6 +77,9 @@ qdrant = QdrantProvider()
 #     }
 
 
+NOT_FOUND = "I couldn't find information about this in the knowledge base."
+
+
 def answer_question(question):
 
     question_embedding = nvidia.generate_embedding(question)
@@ -91,11 +91,20 @@ def answer_question(question):
 
     threshold = getattr(settings, "RAG_MIN_SCORE", 0.70)
 
-    valid_chunks = [chunk for chunk in results if chunk["score"] >= threshold]
+    # Filter every chunk, not just the best one. Previously a single strong hit
+    # dragged the whole low-scoring tail into the prompt, and the model padded
+    # its answer with whatever that noise suggested.
+    results = [chunk for chunk in results if chunk["score"] >= threshold]
+
+    if not results:
+        return {
+            "answer": NOT_FOUND,
+            "sources": [],
+        }
 
     prompt = build_prompt(
         question=question,
-        chunks=valid_chunks,
+        chunks=results,
     )
 
     answer = nvidia.generate_answer(
@@ -103,30 +112,44 @@ def answer_question(question):
         prompt,
     )
 
-    # Smart Source Hiding
-    ans_lower = answer.lower()
-    is_greeting = ans_lower.startswith("hello") or ans_lower.startswith("hi")
-    is_not_found = "couldn't find information" in ans_lower
-    is_vague = "specify which topic" in ans_lower
-
-    if is_greeting or is_not_found or is_vague:
-        sources = []
-    else:
-        sources = []
-        seen_pages = set()
-        for chunk in valid_chunks:
-            unique_key = f"{chunk['file_name']}_{chunk['page_number']}"
-            if unique_key not in seen_pages:
-                seen_pages.add(unique_key)
-                sources.append(
-                    {
-                        "document_name": chunk["file_name"],
-                        "page_number": chunk["page_number"],
-                        "score": round(chunk["score"], 3),
-                    }
-                )
-
     return {
         "answer": answer,
-        "sources": sources,
+        "sources": build_sources(answer, results),
     }
+
+
+def build_sources(answer, results):
+    """Citations only make sense when the answer actually used the documents."""
+
+    lowered = answer.lower()
+
+    # `startswith("hi")` would also catch "History...", so match whole words.
+    first_word = lowered.split()[0].strip(".,!") if lowered.split() else ""
+    is_greeting = first_word in {"hi", "hello", "hey"}
+
+    if (
+        is_greeting
+        or "couldn't find information" in lowered
+        or "which topic" in lowered
+    ):
+        return []
+
+    sources = []
+    seen_pages = set()
+
+    for chunk in results:
+        unique_key = f"{chunk['file_name']}_{chunk['page_number']}"
+
+        if unique_key in seen_pages:
+            continue
+
+        seen_pages.add(unique_key)
+        sources.append(
+            {
+                "document_name": chunk["file_name"],
+                "page_number": chunk["page_number"],
+                "score": round(chunk["score"], 3),
+            }
+        )
+
+    return sources

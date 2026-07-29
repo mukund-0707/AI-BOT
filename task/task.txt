@@ -1,0 +1,111 @@
+Mujhe is poore codebase ka detailed deep-dive analysis chahiye:
+
+analysis yaha daaalna: `D:\mukund\AI bot\AI bot\task`
+
+Sabse pehle overall architecture, code flow, retrieval pipeline, prompts, data processing, chunking, embeddings, vector search, reranking, context construction aur final answer generation ko end-to-end analyse karo.
+
+Deep-dive complete hone ke baad specifically identify karo ki mera LLM retrieval-based answers properly kyun generate nahi kar raha. Abhi issues yeh hain:
+
+* Answers mein important information miss ho jaati hai.
+* Relevant context hone ke baad bhi proper answer nahi milta.
+* Kabhi incomplete ya generic response aata hai.
+* Retrieval expected documents ya chunks return nahi karta.
+* Final response retrieved context ko effectively use nahi karta.
+
+Analysis ke through clearly determine karo ki actual issue kahan hai:
+
+* Prompt design mein
+* Retrieval flow mein
+* Chunking strategy mein
+* Embeddings ya vector search mein
+* Similarity threshold ya top-k configuration mein
+* Metadata filtering mein
+* Query transformation ya query expansion mein
+* Reranking logic mein
+* Context window management mein
+* LLM answer-generation logic mein
+* Code-level bugs ya implementation issues mein
+* Ya kisi aur architectural problem mein
+
+Sirf surface-level suggestions mat dena. Har important issue ke liye yeh explain karo:
+
+1. Issue exactly kya hai
+2. Code mein kahan present hai
+3. Yeh retrieval ya answer quality ko kaise impact kar raha hai
+4. Isko verify ya reproduce kaise kar sakte hain
+5. Recommended fix kya hoga
+6. Fix implement karne ke liye code-level changes kya honge
+
+Uske baad ek better end-to-end approach design karo jo retrieval answer quality improve kare. Is improved approach mein ideally yeh cover hona chahiye:
+
+* Better document ingestion
+* Cleaning aur preprocessing
+* Semantic chunking ya suitable chunk strategy
+* Chunk overlap strategy
+* Metadata design
+* Hybrid search, agar useful ho
+* Query rewriting ya multi-query retrieval
+* Reranking
+* Dynamic top-k
+* Context deduplication
+* Context prioritization
+* Prompt improvements
+* Citation ya source grounding
+* Hallucination control
+* “Answer not found” handling
+* Evaluation framework
+* Logging aur debugging
+* Retrieval-quality metrics
+* Answer-quality metrics
+
+Final output ko is structure mein dena:
+
+### 1. Current System Architecture
+
+Current codebase aur complete request-to-response flow.
+
+### 2. Major Issues Found
+
+Priority ke according: Critical, High, Medium aur Low.
+
+### 3. Root-Cause Analysis
+
+Retrieval aur final answer quality fail hone ke exact reasons.
+
+### 4. Code-Level Findings
+
+Relevant files, functions, classes aur logic ke references ke saath.
+
+### 5. Prompt Analysis
+
+Current prompts ki problems aur improved prompts.
+
+### 6. Recommended Architecture
+
+Better retrieval aur answer-generation pipeline.
+
+### 7. Implementation Plan
+
+Step-by-step changes, preferably phases mein.
+
+### 8. Suggested Code Changes
+
+Required patches, pseudocode ya updated implementation examples.
+
+### 9. Testing and Evaluation Plan
+
+Before-versus-after quality objectively measure karne ka method.
+
+### 10. Final Prioritized Action Plan
+
+Sabse pehle kya fix karna hai, expected impact aur effort ke saath.
+
+Important instructions:
+
+* Assumptions kam se kam rakho.
+* Har conclusion ko code evidence ke basis par explain karo.
+* Sirf prompt ko blame mat karo; complete system ko analyse karo.
+* Existing approach ki limitations aur trade-offs bhi mention karo.
+* Quick fixes aur long-term scalable solution dono provide karo.
+* Jahan possible ho, exact code improvements ya replacement logic create karo.
+* Analysis ke end mein ek clear recommended version of the complete RAG/retrieval flow zaroor do.

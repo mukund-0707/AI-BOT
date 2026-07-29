@@ -8,6 +8,7 @@ from .serializers import DocumentUploadSerializer
 from .services import DocumentService
 from rest_framework.permissions import IsAuthenticated
 from accounts.authenticate import CsrfExemptSessionAuthentication
+from rag.providers.qdrant import VectorStoreUnavailable
 
 
 class UploadDocumentView(APIView):
@@ -26,7 +27,13 @@ class UploadDocumentView(APIView):
         document = DocumentService.upload(serializer.validated_data["file"])
         print(document)
 
-        DocumentService.process_document(document)
+        try:
+            DocumentService.process_document(document)
+        except VectorStoreUnavailable as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         document.refresh_from_db()
 
@@ -40,39 +47,6 @@ class UploadDocumentView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
-
-
-# class ProcessDocumentView(APIView):
-
-#     authentication_classes = [CsrfExemptSessionAuthentication]
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, document_id):
-
-#         try:
-#             document = Document.objects.get(id=document_id)
-#             print("Document:", document)
-
-#         except Document.DoesNotExist:
-
-#             return Response(
-#                 {"detail": "Document not found."},
-#                 status=status.HTTP_404_NOT_FOUND,
-#             )
-
-#         DocumentService.process_document(document)
-
-#         document.refresh_from_db()
-
-#         return Response(
-#             {
-#                 "id": document.id,
-#                 "status": document.status,
-#                 "total_pages": document.total_pages,
-#                 "total_chunks": document.total_chunks,
-#             },
-#             status=status.HTTP_200_OK,
-#         )
 
 
 class DeleteDocumentView(APIView):
@@ -92,5 +66,5 @@ class DeleteDocumentView(APIView):
 
         return Response(
             {"detail": "Document successfully deleted."},
-            status=status.HTTP_204_NO_CONTENT,
+            status=status.HTTP_200_OK,
         )

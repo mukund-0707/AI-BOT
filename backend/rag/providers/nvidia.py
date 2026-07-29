@@ -1,6 +1,20 @@
+import re
+
 from openai import OpenAI
 
 from django.conf import settings
+
+# Reasoning models normally return their trace in a separate field, but they
+# occasionally inline it in the answer. Strip it either way.
+THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_reasoning(text):
+
+    if not text:
+        return ""
+
+    return THINK_BLOCK.sub("", text).strip()
 
 
 class NVIDIAProvider:
@@ -35,6 +49,7 @@ class NVIDIAProvider:
         )
 
         embedding = response.data[0].embedding
+        # print("RESPONSE EMMBD: \n", response)
 
         return embedding
 
@@ -44,6 +59,7 @@ class NVIDIAProvider:
             model=settings.NVIDIA_EMBEDDING_MODEL,
             input=texts,
         )
+        # print("RESPONSE BATCH: \n", response)
 
         return [item.embedding for item in response.data]
 
@@ -62,7 +78,17 @@ class NVIDIAProvider:
                 },
             ],
             temperature=0.2,
-            max_tokens=2048,
+            top_p=0.9,
+            max_tokens=1200,
         )
         print("NVIDIA response:", response.choices[0].message.content)
-        return response.choices[0].message.content
+        choice = response.choices[0]
+        answer = strip_reasoning(choice.message.content)
+
+        if choice.finish_reason == "length" and not answer:
+            return (
+                "The answer was cut off before it could be written. "
+                "Please ask a narrower question."
+            )
+
+        return answer

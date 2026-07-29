@@ -50,6 +50,7 @@ class DocumentService:
             document.save(update_fields=["status"])
 
             pages = DocumentService.extract_document(document)
+            print("PAGES \n", pages)
 
             cleaned_pages = []
 
@@ -65,8 +66,10 @@ class DocumentService:
                             "text": text,
                         }
                     )
+                    print("CLEANED_PAGES: \n",cleaned_pages)
 
             chunks = create_chunks(cleaned_pages)
+            # print("CHUNKS: \n", chunks)
 
             if not chunks:
                 document.status = Document.Status.FAILED
@@ -98,6 +101,10 @@ class DocumentService:
             qdrant = QdrantProvider()
 
             qdrant.ensure_collection(len(embeddings[0]))
+
+            # Remove old chunks before re-indexing.
+            deel = qdrant.delete_chunks(document.id)
+            print("DEEL \n", deel)
 
             qdrant.upsert_chunks(
                 document,

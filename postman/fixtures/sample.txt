@@ -1,0 +1,16 @@
+Mukii Postman Test Document
+
+This file exists so the Postman collection can be run end to end without
+hunting for a file to upload.
+
+Section 1. Test marker
+The unique test marker for this document is MUKII-POSTMAN-CHECK-42.
+
+Section 2. For developers and analysts
+If you are testing retrieval quality, ask the chatbot "What is the unique
+test marker for the Postman test document?" and it should answer
+MUKII-POSTMAN-CHECK-42 with this file listed as a source.
+
+Section 3. Cleanup
+Delete this document again with the "Delete Document" request so the
+knowledge base does not fill up with test uploads.

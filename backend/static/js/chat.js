@@ -21,12 +21,18 @@ const Chat = {
     },
 
     escapeHtml(text) {
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+        return Markdown.escapeHtml(text);
+    },
+
+    appendNode(className, innerHtml) {
+        const node = document.createElement("div");
+        node.className = className;
+        node.innerHTML = innerHtml;
+
+        UI.elements.chatWrapper.appendChild(node);
+        UI.scrollToBottom();
+
+        return node;
     },
 
     botAvatarHtml(small = false) {
@@ -67,24 +73,20 @@ const Chat = {
                     ? "status-message error"
                     : "status-message";
 
-        UI.elements.chatWrapper.innerHTML += `
-            <div class="${statusClass}">
-                ${this.botAvatarHtml(true)}
-                <div class="status-content">${this.escapeHtml(message)}</div>
-            </div>
-        `;
-
-        UI.scrollToBottom();
+        this.appendNode(
+            statusClass,
+            `
+            ${this.botAvatarHtml(true)}
+            <div class="status-content">${this.escapeHtml(message)}</div>
+        `
+        );
     },
 
     renderUserMessage(message) {
-        UI.elements.chatWrapper.innerHTML += `
-            <div class="message user-message">
-                <div class="message-content">${this.escapeHtml(message)}</div>
-            </div>
-        `;
-
-        UI.scrollToBottom();
+        this.appendNode(
+            "message user-message",
+            `<div class="message-content">${this.escapeHtml(message)}</div>`
+        );
     },
 
     renderAIMessage(message, sources = []) {
@@ -109,34 +111,32 @@ const Chat = {
             `;
         }
 
-        UI.elements.chatWrapper.innerHTML += `
-            <div class="message ai-message">
-                ${this.botAvatarHtml(true)}
-                <div class="message-content">
-                    ${this.escapeHtml(message)}
-                    ${sourcesHtml}
-                </div>
+        this.appendNode(
+            "message ai-message",
+            `
+            ${this.botAvatarHtml(true)}
+            <div class="message-content">
+                <div class="message-body">${Markdown.render(message)}</div>
+                ${sourcesHtml}
             </div>
-        `;
-
-        UI.scrollToBottom();
+        `
+        );
     },
 
     renderThinkingMessage() {
-        const thinkingNode = document.createElement("div");
-        thinkingNode.className = "message ai-message thinking-message";
-        thinkingNode.id = "thinkingMessage";
-        thinkingNode.innerHTML = `
+        const thinkingNode = this.appendNode(
+            "message ai-message thinking-message",
+            `
             ${this.botAvatarHtml(true)}
             <div class="message-content thinking-content">
                 <span class="thinking-dot"></span>
                 <span class="thinking-dot"></span>
                 <span class="thinking-dot"></span>
             </div>
-        `;
+        `
+        );
 
-        UI.elements.chatWrapper.appendChild(thinkingNode);
-        UI.scrollToBottom();
+        thinkingNode.id = "thinkingMessage";
     },
 
     removeThinkingMessage() {

@@ -1,0 +1,3 @@
+id,name,note
+1,rejected,This file type is not allowed by DocumentUploadSerializer.validate_file
+2,expected,The upload request should fail with HTTP 400

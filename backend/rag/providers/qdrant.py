@@ -1,7 +1,5 @@
-# pyrefly: ignore [missing-import]
 from django.conf import settings
 
-# pyrefly: ignore [missing-import]
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -11,8 +9,32 @@ from qdrant_client.models import (
     FieldCondition,
     MatchValue,
 )
+from qdrant_client.http.exceptions import (
+    ResponseHandlingException,
+    UnexpectedResponse,
+)
 
 import uuid
+
+# Namespace for deterministic point ids. Re-indexing a document then overwrites
+# its existing points instead of inserting a second copy of every chunk.
+POINT_NAMESPACE = uuid.UUID("6f2d1c4e-9a3b-4f5e-8c7d-1b2a3c4d5e6f")
+
+
+def point_id(document_id, chunk_index):
+    return str(uuid.uuid5(POINT_NAMESPACE, f"{document_id}:{chunk_index}"))
+
+
+class VectorStoreUnavailable(Exception):
+    """The Qdrant server could not be reached."""
+
+
+def connection_error():
+    return VectorStoreUnavailable(
+        f"Could not connect to the vector database at {settings.QDRANT_URL}. "
+        "Start Qdrant and try again "
+        "(docker start qdrant)."
+    )
 
 
 class QdrantProvider:
@@ -25,26 +47,32 @@ class QdrantProvider:
         )
 
     def health_check(self):
-        return self.client.get_collections()
+        try:
+            return self.client.get_collections()
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
 
     def ensure_collection(
         self,
         vector_size,
     ):
-        collections = self.client.get_collections()
+        try:
+            collections = self.client.get_collections()
 
-        existing = [c.name for c in collections.collections]
+            existing = [c.name for c in collections.collections]
 
-        if settings.QDRANT_COLLECTION_NAME in existing:
-            return
+            if settings.QDRANT_COLLECTION_NAME in existing:
+                return
 
-        self.client.create_collection(
-            collection_name=settings.QDRANT_COLLECTION_NAME,
-            vectors_config=VectorParams(
-                size=vector_size,
-                distance=Distance.COSINE,
-            ),
-        )
+            self.client.create_collection(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE,
+                ),
+            )
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
 
     def upsert_chunks(
         self,
@@ -59,7 +87,7 @@ class QdrantProvider:
         ):
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()),
+                    id=point_id(document.id, chunk["chunk_index"]),
                     vector=embedding,
                     payload={
                         "document_id": document.id,
@@ -71,39 +99,49 @@ class QdrantProvider:
                 )
             )
 
-        self.client.upsert(
-            collection_name=settings.QDRANT_COLLECTION_NAME,
-            points=points,
-        )
+        try:
+            self.client.upsert(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                points=points,
+            )
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
 
     def search_chunks(
         self,
         question_embedding,
-        limit=10,
+        limit=8,
     ):
 
-        from qdrant_client.http.exceptions import UnexpectedResponse, ResponseHandlingException
-
         try:
+            # Over-fetch so that dropping duplicates still leaves `limit`
+            # distinct chunks to answer from.
             results = self.client.query_points(
                 collection_name=settings.QDRANT_COLLECTION_NAME,
                 query=question_embedding,
-                limit=limit,
+                limit=limit * 3,
             )
-        except UnexpectedResponse as e:
-            if e.status_code == 404:
-                return []
-            raise
-        except ResponseHandlingException:
-            return []
-        except Exception as e:
-            if "Not found: Collection" in str(e):
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
+        except UnexpectedResponse as exc:
+            # Nothing has been indexed yet, so the collection does not exist.
+            if exc.status_code == 404:
                 return []
             raise
 
         output = []
+        seen_text = set()
 
         for point in results.points:
+
+            # The same passage is often indexed more than once - the file was
+            # uploaded twice, or an older index run left its points behind.
+            fingerprint = point.payload["text"].strip()
+
+            if fingerprint in seen_text:
+                continue
+
+            seen_text.add(fingerprint)
 
             output.append(
                 {
@@ -114,19 +152,30 @@ class QdrantProvider:
                     "text": point.payload["text"],
                 }
             )
+
+            if len(output) >= limit:
+                break
         print("OUTPUT:", output)
 
         return output
 
     def delete_chunks(self, document_id):
-        self.client.delete(
-            collection_name=settings.QDRANT_COLLECTION_NAME,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id",
-                        match=MatchValue(value=document_id),
-                    )
-                ]
-            ),
-        )
+        try:
+            self.client.delete(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchValue(value=document_id),
+                        )
+                    ]
+                ),
+            )
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
+        except UnexpectedResponse as exc:
+            # No collection means there is nothing to delete.
+            if exc.status_code == 404:
+                return
+            raise

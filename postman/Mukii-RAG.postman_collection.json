@@ -1,0 +1,636 @@
+{
+  "info": {
+    "_postman_id": "b7e1c2a4-91f5-4d3a-8f6c-2a0d4e7b9c11",
+    "name": "Mukii RAG Chatbot",
+    "description": "API tests for the Mukii Django RAG chatbot.\n\n**Prerequisites**\n1. Qdrant must be running: `docker start qdrant` (check with the Infra > Qdrant requests).\n2. Django must be running: `python manage.py runserver`.\n3. Set `username` / `password` in the environment to a real Django user.\n\n**Run order matters.** Use the Collection Runner, or fire the requests top to bottom:\nGet CSRF Cookie -> Login -> Upload -> Ask -> Delete.\n\n**Why the CSRF dance?**\n`AskQuestionView` uses the project default `SessionAuthentication` (config/settings.py), which enforces CSRF once a session cookie exists. `UploadDocumentView` and `DeleteDocumentView` use `CsrfExemptSessionAuthentication`, so they do not. Django also rotates the CSRF token during login, so the token is re-captured after the Login request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000", "type": "string" },
+    { "key": "qdrant_url", "value": "http://localhost:6333", "type": "string" },
+    { "key": "qdrant_collection", "value": "document_chunks", "type": "string" },
+    { "key": "username", "value": "mukund", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "csrftoken", "value": "", "type": "string" },
+    { "key": "document_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Get CSRF Cookie",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// The chatbot page is decorated with @ensure_csrf_cookie, so hitting it",
+                  "// hands us a csrftoken cookie to use on later POSTs.",
+                  "let token = pm.cookies.get(\"csrftoken\");",
+                  "",
+                  "if (!token) {",
+                  "    const setCookie = pm.response.headers.all()",
+                  "        .filter(function (h) { return h.key.toLowerCase() === \"set-cookie\"; })",
+                  "        .map(function (h) { return h.value; })",
+                  "        .join(\"; \");",
+                  "    const match = setCookie.match(/csrftoken=([^;]+)/);",
+                  "    if (match) { token = match[1]; }",
+                  "}",
+                  "",
+                  "if (token) { pm.collectionVariables.set(\"csrftoken\", token); }",
+                  "",
+                  "pm.test(\"csrftoken cookie captured\", function () {",
+                  "    pm.expect(token, \"no csrftoken cookie returned\").to.be.a(\"string\").and.to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/chat/", "host": ["{{base_url}}"], "path": ["api", "chat", ""] },
+            "description": "Loads the chatbot page purely to obtain a csrftoken cookie. Run this first."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"login succeeded\", function () {",
+                  "    pm.expect(pm.response.json().message).to.eql(\"Login Successful\");",
+                  "});",
+                  "",
+                  "// Django rotates the CSRF token on login, so the one captured earlier is",
+                  "// now stale. Re-capture it or the Ask Question request will 403.",
+                  "let token = pm.cookies.get(\"csrftoken\");",
+                  "",
+                  "if (!token) {",
+                  "    const setCookie = pm.response.headers.all()",
+                  "        .filter(function (h) { return h.key.toLowerCase() === \"set-cookie\"; })",
+                  "        .map(function (h) { return h.value; })",
+                  "        .join(\"; \");",
+                  "    const match = setCookie.match(/csrftoken=([^;]+)/);",
+                  "    if (match) { token = match[1]; }",
+                  "}",
+                  "",
+                  "if (token) { pm.collectionVariables.set(\"csrftoken\", token); }",
+                  "",
+                  "pm.test(\"session cookie set\", function () {",
+                  "    pm.expect(pm.cookies.has(\"sessionid\"), \"no sessionid cookie\").to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/accounts/login/", "host": ["{{base_url}}"], "path": ["api", "accounts", "login", ""] },
+            "description": "Session login. This endpoint is @csrf_exempt, so no token is needed here.\nSets the sessionid cookie that Upload / Delete require."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - wrong password (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "pm.test(\"returns Invalid credentials\", function () {",
+                  "    pm.expect(pm.response.json().message).to.eql(\"Invalid credentials\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"{{username}}\",\n    \"password\": \"definitely-not-the-password\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/accounts/login/", "host": ["{{base_url}}"], "path": ["api", "accounts", "login", ""] },
+            "description": "Negative test. Run this AFTER the other requests, or re-run Login, because a failed login does not clear an existing session."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Documents",
+      "item": [
+        {
+          "name": "Upload Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "if (body.id) { pm.collectionVariables.set(\"document_id\", body.id); }",
+                  "",
+                  "pm.test(\"document reached ready status\", function () {",
+                  "    pm.expect(body.status).to.eql(\"ready\");",
+                  "});",
+                  "",
+                  "pm.test(\"chunks were indexed into Qdrant\", function () {",
+                  "    pm.expect(body.total_chunks).to.be.above(0);",
+                  "});",
+                  "",
+                  "console.log(\"uploaded document_id =\", body.id, \"chunks =\", body.total_chunks);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/sample.txt",
+                  "description": "PDF, DOCX or TXT only, max 10 MB. If Postman cannot find the file, click Select Files and pick postman/fixtures/sample.txt yourself."
+                }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/documents/upload/", "host": ["{{base_url}}"], "path": ["api", "documents", "upload", ""] },
+            "description": "Uploads, extracts, chunks, embeds via NVIDIA and upserts into Qdrant - all synchronously, so this request is slow for big files.\n\nRequires login. No CSRF header needed (CsrfExemptSessionAuthentication).\nSaves the new id into the `document_id` collection variable."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload - unsupported type (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"rejects the file type\", function () {",
+                  "    pm.expect(JSON.stringify(pm.response.json())).to.include(\"Only PDF, DOCX and TXT\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "fixtures/unsupported.csv" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/documents/upload/", "host": ["{{base_url}}"], "path": ["api", "documents", "upload", ""] },
+            "description": "Negative test for DocumentUploadSerializer.validate_file."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload - not logged in (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 403\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "",
+                  "console.log(\"NOTE: this only passes when no sessionid cookie is present.\");",
+                  "console.log(\"Clear cookies for {{base_url}} first, then re-run Login afterwards.\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "fixtures/sample.txt" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/documents/upload/", "host": ["{{base_url}}"], "path": ["api", "documents", "upload", ""] },
+            "description": "Permission test. Clear the cookie jar for this domain before running, otherwise the existing session makes it succeed."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"document_id\", \"\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/{{document_id}}/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "{{document_id}}", ""]
+            },
+            "description": "Deletes the document uploaded above, its file on disk, and its vectors in Qdrant.\nUses the `document_id` captured by the Upload request."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete - missing id (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test(\"returns a detail message\", function () {",
+                  "    pm.expect(pm.response.json().detail).to.eql(\"Document not found.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/documents/999999/", "host": ["{{base_url}}"], "path": ["api", "documents", "999999", ""] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Chat",
+      "item": [
+        {
+          "name": "Ask Question",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"answer is a non-empty string\", function () {",
+                  "    pm.expect(body.answer).to.be.a(\"string\").and.to.not.be.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"sources is an array\", function () {",
+                  "    pm.expect(body.sources).to.be.an(\"array\");",
+                  "});",
+                  "",
+                  "// Retrieval quality signal, not a hard failure.",
+                  "if (body.answer.indexOf(\"couldn't find information\") !== -1) {",
+                  "    console.warn(\"RETRIEVAL MISS: nothing scored above RAG_MIN_SCORE for this question.\");",
+                  "}",
+                  "",
+                  "console.log(\"ANSWER:\", body.answer);",
+                  "console.log(\"SOURCES:\", JSON.stringify(body.sources, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              {
+                "key": "X-CSRFToken",
+                "value": "{{csrftoken}}",
+                "description": "Required once a sessionid cookie exists, because AskQuestionView uses the default SessionAuthentication."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What is this policy document about?\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/chat/ask/", "host": ["{{base_url}}"], "path": ["api", "chat", "ask", ""] },
+            "description": "The main RAG endpoint. Embeds the question, searches Qdrant, and asks the NVIDIA model to answer from the retrieved chunks."
+          },
+          "response": []
+        },
+        {
+          "name": "Ask - section lookup (retrieval probe)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "const retrieved = body.answer.indexOf(\"developers and analysts\") !== -1;",
+                  "const truncated = body.answer.indexOf(\"incomplete\") !== -1 ||",
+                  "                  body.answer.indexOf(\"truncated\") !== -1;",
+                  "",
+                  "// Retrieval-quality probe, not a pass/fail assertion.",
+                  "// Baseline (RAG_MIN_SCORE 0.70): missed entirely.",
+                  "// After the threshold fix (0.35): the section is retrieved, but the answer",
+                  "// still reports the text as incomplete because page headers/footers are",
+                  "// not stripped before chunking, so the section gets cut mid-sentence.",
+                  "console.log(retrieved ? \"section retrieved\" : \"SECTION MISSED\");",
+                  "console.log(truncated ? \"text still truncated - boilerplate cleanup pending\" : \"full text returned\");",
+                  "console.log(\"ANSWER:\", body.answer);",
+                  "console.log(\"SOURCES:\", JSON.stringify(body.sources, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRFToken", "value": "{{csrftoken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"Give me full text of: 3. For developers and analyst\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/chat/ask/", "host": ["{{base_url}}"], "path": ["api", "chat", "ask", ""] },
+            "description": "Regression probe for exact-section lookups against the Gaia PDF.\n\nThe section is now retrieved (it was missed entirely when RAG_MIN_SCORE was 0.70), but the answer still calls the text incomplete: repeated page headers/footers are not stripped before chunking, so the section is split mid-sentence and the junk chunks outrank it.\n\nRe-run this after changing chunking or the text cleaner to see whether the full text comes back."
+          },
+          "response": []
+        },
+        {
+          "name": "Ask - empty question (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"complains about the question field\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"question\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRFToken", "value": "{{csrftoken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n    \"question\": \"   \"\n}" },
+            "url": { "raw": "{{base_url}}/api/chat/ask/", "host": ["{{base_url}}"], "path": ["api", "chat", "ask", ""] }
+          },
+          "response": []
+        },
+        {
+          "name": "Ask - missing CSRF token (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 403 when logged in without a CSRF token\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "",
+                  "console.log(\"NOTE: requires an active session. If you are logged out this returns 200 instead,\");",
+                  "console.log(\"because SessionAuthentication only enforces CSRF for authenticated requests.\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n    \"question\": \"hello\"\n}" },
+            "url": { "raw": "{{base_url}}/api/chat/ask/", "host": ["{{base_url}}"], "path": ["api", "chat", "ask", ""] },
+            "description": "Deliberately omits X-CSRFToken to prove CSRF enforcement on this endpoint. Run while logged in."
+          },
+          "response": []
+        },
+        {
+          "name": "Ask - Qdrant down (expect 503)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 503\", function () {",
+                  "    pm.response.to.have.status(503);",
+                  "});",
+                  "",
+                  "pm.test(\"returns a readable detail instead of a stack trace\", function () {",
+                  "    pm.expect(pm.response.json().detail).to.include(\"vector database\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRFToken", "value": "{{csrftoken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n    \"question\": \"What is this policy document about?\"\n}" },
+            "url": { "raw": "{{base_url}}/api/chat/ask/", "host": ["{{base_url}}"], "path": ["api", "chat", "ask", ""] },
+            "description": "MANUAL TEST. Run `docker stop qdrant` first, send this, then `docker start qdrant`.\nConfirms the vector store outage returns 503 with a detail message rather than a 500 traceback."
+          },
+          "response": []
+        },
+        {
+          "name": "Open Chatbot UI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"returns HTML\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/html\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/chat/", "host": ["{{base_url}}"], "path": ["api", "chat", ""] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Infra - Qdrant",
+      "item": [
+        {
+          "name": "Qdrant Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Qdrant is reachable\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "console.log(\"If this fails, run: docker start qdrant\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{qdrant_url}}/", "host": ["{{qdrant_url}}"], "path": [""] },
+            "description": "Run this first whenever the chat endpoint starts returning 503."
+          },
+          "response": []
+        },
+        {
+          "name": "List Collections",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const names = pm.response.json().result.collections.map(function (c) { return c.name; });",
+                  "",
+                  "pm.test(\"the chunk collection exists\", function () {",
+                  "    pm.expect(names).to.include(pm.collectionVariables.get(\"qdrant_collection\"));",
+                  "});",
+                  "",
+                  "console.log(\"collections:\", names.join(\", \"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{qdrant_url}}/collections", "host": ["{{qdrant_url}}"], "path": ["collections"] },
+            "description": "If the collection is missing, nothing has been indexed. Run:\n`python manage.py reindex_documents`"
+          },
+          "response": []
+        },
+        {
+          "name": "Collection Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const result = pm.response.json().result;",
+                  "",
+                  "pm.test(\"collection has vectors\", function () {",
+                  "    pm.expect(result.points_count).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test(\"collection status is green\", function () {",
+                  "    pm.expect(result.status).to.eql(\"green\");",
+                  "});",
+                  "",
+                  "console.log(\"points:\", result.points_count, \"| vector size:\", result.config.params.vectors.size);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{qdrant_url}}/collections/{{qdrant_collection}}",
+              "host": ["{{qdrant_url}}"],
+              "path": ["collections", "{{qdrant_collection}}"]
+            },
+            "description": "Point count sanity check. The web dashboard for the same data is at {{qdrant_url}}/dashboard"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

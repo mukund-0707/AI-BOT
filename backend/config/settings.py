@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
-# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -168,4 +167,4 @@ QDRANT_COLLECTION_NAME = os.getenv(
 )
 
 
-RAG_MIN_SCORE = 0.7
+RAG_MIN_SCORE = 0.35

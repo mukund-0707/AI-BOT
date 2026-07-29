@@ -123,6 +123,166 @@
 
     font-size:15px;
 
+    overflow-wrap:anywhere;
+
+}
+
+/* ===== Rendered Markdown inside an answer ===== */
+
+.message-body > *:first-child{
+
+    margin-top:0;
+
+}
+
+.message-body > *:last-child{
+
+    margin-bottom:0;
+
+}
+
+.message-body p{
+
+    margin:0 0 12px;
+
+}
+
+.message-body h3,
+.message-body h4,
+.message-body h5,
+.message-body h6{
+
+    margin:18px 0 8px;
+
+    line-height:1.4;
+
+    font-weight:600;
+
+}
+
+.message-body h3{ font-size:17px; }
+
+.message-body h4{ font-size:16px; }
+
+.message-body h5,
+.message-body h6{ font-size:15px; }
+
+.message-body ul,
+.message-body ol{
+
+    margin:0 0 12px;
+
+    padding-left:22px;
+
+}
+
+.message-body ul{ list-style:disc; }
+
+.message-body ol{ list-style:decimal; }
+
+.message-body li{
+
+    margin-bottom:6px;
+
+}
+
+.message-body li > ul,
+.message-body li > ol{
+
+    margin:6px 0 0;
+
+}
+
+.message-body li::marker{
+
+    color:var(--text-light);
+
+}
+
+.message-body strong{
+
+    font-weight:600;
+
+}
+
+.message-body a{
+
+    color:var(--primary);
+
+    text-decoration:underline;
+
+}
+
+.message-body blockquote{
+
+    margin:0 0 12px;
+
+    padding:2px 0 2px 14px;
+
+    border-left:3px solid var(--border);
+
+    color:var(--text-light);
+
+}
+
+.message-body hr{
+
+    margin:16px 0;
+
+    border:0;
+
+    border-top:1px solid var(--border);
+
+}
+
+.message-body code{
+
+    padding:2px 6px;
+
+    border-radius:6px;
+
+    background:rgba(124,58,237,.10);
+
+    font-family:ui-monospace,"Cascadia Code",Consolas,monospace;
+
+    font-size:13.5px;
+
+}
+
+.message-body pre{
+
+    margin:0 0 12px;
+
+    padding:14px 16px;
+
+    border-radius:12px;
+
+    background:rgba(15,18,32,.06);
+
+    overflow-x:auto;
+
+}
+
+.message-body pre code{
+
+    padding:0;
+
+    background:none;
+
+    font-size:13px;
+
+}
+
+html[data-theme="dark"] .message-body code{
+
+    background:rgba(167,139,250,.16);
+
+}
+
+html[data-theme="dark"] .message-body pre{
+
+    background:rgba(0,0,0,.28);
+
 }
 
 .user-message .message-content{
