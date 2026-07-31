@@ -4,6 +4,7 @@ from django.conf import settings
 
 from documents.models import Document
 
+from rag import history as history_window
 from rag import intents
 from rag.prompts import (
     EMPTY_CORPUS,
@@ -31,6 +32,17 @@ def localised(table, language):
     return table.get(language, table[intents.EN])
 
 
+def recent_messages(history):
+    """The slice of the conversation worth spending prompt on."""
+
+    return history_window.window(
+        history,
+        limit=settings.RAG_HISTORY_LIMIT,
+        char_budget=settings.RAG_HISTORY_CHAR_BUDGET,
+        message_chars=settings.RAG_HISTORY_MESSAGE_CHARS,
+    )
+
+
 def rerank(question, results):
     """The reranker is the relevance gate; vector order is only a safety net."""
 
@@ -46,33 +58,41 @@ def rerank(question, results):
         return results[: settings.RAG_TOP_N]
 
 
-def answer_question(question):
+def answer_question(question, history=None):
     """Route first, retrieve second.
 
     Small talk and "give me context" match no passage, so anything that decides
     from the result set alone answers both with "not found". The intent is
     settled before a single vector is fetched.
+
+    `history` is the conversation so far, oldest first. It is what lets a
+    follow-up ("aur carry forward ka?") be rewritten into something retrievable.
     """
 
-    decision = intents.classify(question, nvidia)
+    messages = recent_messages(history)
+    logger.debug("Carrying %d messages of history", len(messages))
+
+    decision = intents.classify(question, nvidia, history=messages)
     logger.debug("Routed %r as %s", question, decision)
 
     if decision["intent"] == intents.SMALL_TALK:
-        return small_talk_answer(question, decision["language"])
+        return small_talk_answer(question, decision["language"], messages)
 
     if decision["intent"] == intents.OVERVIEW:
+        # An orientation answer has nothing to follow up on.
         return overview_answer(decision["language"])
 
-    return knowledge_answer(question, decision)
+    return knowledge_answer(question, decision, messages)
 
 
-def small_talk_answer(question, language):
+def small_talk_answer(question, language, history=None):
     """No retrieval and no citations - there is nothing here to ground."""
 
     try:
         answer = nvidia.generate_answer(
             SMALL_TALK_PROMPT,
             build_small_talk_prompt(question, language),
+            history=history,
         )
     except Exception as exc:
         # A greeting is not worth a 500.
@@ -119,7 +139,7 @@ def overview_answer(language):
     }
 
 
-def knowledge_answer(question, decision):
+def knowledge_answer(question, decision, history=None):
 
     language = decision["language"]
     search_query = decision["search_query"] or question
@@ -155,6 +175,7 @@ def knowledge_answer(question, decision):
     answer = nvidia.generate_answer(
         SYSTEM_PROMPT,
         prompt,
+        history=history_window.user_turns(history),
     )
 
     if is_no_answer(answer):

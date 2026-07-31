@@ -31,8 +31,8 @@ The codebase includes the following working pieces:
 - **Synchronous ingestion.** Document upload and indexing happen inside the request. Large documents can make the request slow or time out.
 - **The ask endpoint is unauthenticated.** `AskQuestionView` uses `AllowAny`, so anyone who can reach the server can query the indexed documents. Uploading and deleting do require a login.
 - **Source citations collapse for DOCX and TXT.** Citations are de-duplicated by file name and page number, and those formats have no page number, so a multi-chunk answer still reports a single source.
-- **No conversation memory.** Every question is answered independently, so follow-ups such as "explain that in more detail" are matched literally and usually retrieve nothing.
-- **Corpus-wide requests are not handled.** A bare "summarise this document" matches no individual passage and is answered with the not-found message. This needs intent routing or stored per-document summaries.
+- **Conversation memory is session-scoped and limited.** The recent chat window is used to resolve follow-ups, but very long threads may still lose earlier context.
+- **Very broad requests still depend on the indexed material.** A generic request such as "summarise this document" can still fall back to the not-found message when the available chunks do not support that answer well.
 - **No automated tests.** See section 17.
 
 ## 2. Key features
@@ -46,6 +46,8 @@ The codebase includes the following working pieces:
 - Retrieve relevant chunks for a question
 - Rerank candidates before prompt construction
 - Generate grounded answers from retrieved context
+- Route greetings, overviews, and knowledge questions through the right path
+- Use recent conversation turns to resolve follow-up questions
 - Provide a simple chat UI and REST APIs
 
 ## 3. Tech stack
@@ -131,6 +133,11 @@ The settings file loads values from [backend/.env](backend/.env) through Django 
 | `QDRANT_URL` | No | `http://localhost:6333` | Qdrant service URL |
 | `QDRANT_API_KEY` | No | None | Qdrant API key if needed |
 | `QDRANT_COLLECTION_NAME` | No | `document_chunks_v2` | Qdrant collection name |
+| `RAG_ENABLE_LLM_INTENT` | No | `True` | Enable LLM intent classification fallback |
+| `RAG_INTENT_MAX_TOKENS` | No | `80` | Max tokens for the intent classifier |
+| `RAG_INTENT_TIMEOUT` | No | `10` | Timeout in seconds for intent classification |
+| `RAG_OVERVIEW_MAX_DOCUMENTS` | No | `5` | Number of recent ready documents sampled for overview |
+| `RAG_OVERVIEW_DOC_CHUNKS` | No | `3` | Number of opening chunks per document for overview queries |
 
 Example:
 
@@ -143,6 +150,11 @@ NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_CHAT_MODEL=nvidia/llama-3.3-nemotron-super-49b-v1.5
 NVIDIA_EMBEDDING_MODEL=nvidia/nv-embed-v1
 NVIDIA_RERANK_MODEL=nvidia/rerank-qa-mistral-4b
+RAG_ENABLE_LLM_INTENT=True
+RAG_INTENT_MAX_TOKENS=80
+RAG_INTENT_TIMEOUT=10
+RAG_OVERVIEW_MAX_DOCUMENTS=5
+RAG_OVERVIEW_DOC_CHUNKS=3
 
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
@@ -231,14 +243,14 @@ The root URL redirects to the chat UI path.
 ### 10.2 Retrieval and answer flow
 
 1. The user sends a question through the chat API or the web UI.
-2. The question is embedded with the NVIDIA embedding model.
-3. Qdrant is queried with both dense vector similarity and sparse keyword-style matching.
-4. The results are fused and passed to a reranker.
-5. The reranker scores the retrieved passages against the question.
-6. The top results are enriched with neighbouring chunks to preserve context around each hit.
-7. The prompt builder assembles the context and the question.
-8. The NVIDIA chat model generates the final answer.
-9. The response is returned with a list of sources.
+2. The message is classified as small talk, overview, or knowledge.
+3. Small talk questions are answered directly by the chat model without retrieval.
+4. Overview requests sample opening chunks from the most recently ready documents.
+5. Knowledge questions are rewritten with the recent conversation in mind and then embedded with the NVIDIA embedding model.
+6. Qdrant is queried with both dense vector similarity and sparse keyword-style matching.
+7. The results are fused and passed to a reranker.
+8. The reranker scores the retrieved passages against the question.
+12. The response is returned with a list of sources.
 
 ## 11. How the RAG pipeline works
 
@@ -340,6 +352,12 @@ The prompt builder creates a context block from the retrieved chunks and places 
 Answer generation is performed by [backend/rag/providers/nvidia.py](backend/rag/providers/nvidia.py), using the configured chat model.
 
 The system prompt begins with `/no_think`, which suppresses the reasoning trace on the `nemotron` chat models. The directive is honoured inconsistently: when it is ignored, the reasoning trace consumes the token budget, which shows up as occasional slow responses and answers that stop mid-sentence.
+
+### Intent routing and conversation memory
+
+Intent routing is implemented in [backend/rag/intents.py](backend/rag/intents.py) and [backend/rag/services.py](backend/rag/services.py). The classifier routes a turn as small talk, overview, or knowledge before retrieval starts. That prevents greetings and broad context requests from being treated as failed retrievals.
+
+Conversation memory is stored in the Django session by [backend/chat/history.py](backend/chat/history.py). The history window is trimmed in [backend/rag/history.py](backend/rag/history.py) so follow-up questions such as "aur carry forward ka?" or "iska matlab?" can be rewritten into a searchable query with the earlier topic in mind.
 
 ## 12. API documentation
 

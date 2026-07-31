@@ -36,7 +36,7 @@ HI = "hi"
 
 LANGUAGES = {EN, HINGLISH, HI}
 
-DEVANAGARI = re.compile(r"[ऀ-ॿ] | in hindi|in devanagari | hindi | hindi me do", re.IGNORECASE | re.VERBOSE)
+DEVANAGARI = re.compile(r"[ऀ-ॿ] | in\s+hindi | in\s+devanagari | hindi | hindi\s+me\s+do", re.IGNORECASE | re.VERBOSE)
 
 # Hindi function words (Latin script) used for Hinglish detection.
 HINGLISH_MARKERS = re.compile(
@@ -48,10 +48,10 @@ HINGLISH_MARKERS = re.compile(
         | karta | karti | karna | karne | kare | karo
         | nahi | nhi | naa | mat
         | chahiye | chaiye | batao | bataiye | bata | samjhao | samjha
-        | dijiye | dedo | thoda | thodi | kuch | koi | sirf | bhi | wala | wali | hinglish me
+        | dijiye | dedo | thoda | thodi | kuch | koi | sirf | bhi | wala | wali | hinglish\s+me
         | iska | iske | isme | uska | uske | usme | yeh | woh | vah
         | baare | bare | matlab | jankari | jaankari | jaanana | janna
-        | acha | accha | theek | thik | bilkul | zaroori | zarurat | hinglish | in hinglish 
+        | acha | accha | theek | thik | bilkul | zaroori | zarurat | hinglish | in\s+hinglish 
     )\b""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -197,19 +197,23 @@ def parse_model_decision(raw, message, language):
     return decision(intent, language, search_query, source="model")
 
 
-def classify_by_model(message, language, provider):
+def classify_by_model(message, language, provider, history=None):
 
     raw = provider.classify(
         INTENT_PROMPT,
-        build_intent_prompt(message),
+        build_intent_prompt(message, history),
         max_tokens=settings.RAG_INTENT_MAX_TOKENS,
     )
 
     return parse_model_decision(raw, message, language)
 
 
-def classify(message, provider=None):
+def classify(message, provider=None, history=None):
     """The single entry point. `provider=None` means rules only.
+
+    `history` is what turns a follow-up into a searchable query - only the model
+    stage can use it, since resolving "aur uske baad?" needs the conversation, not
+    a pattern.
 
     Never raises: an unroutable message is a question, which is what the app did
     before this module existed.
@@ -226,7 +230,7 @@ def classify(message, provider=None):
 
     if provider is not None and settings.RAG_ENABLE_LLM_INTENT:
         try:
-            return classify_by_model(cleaned, language, provider)
+            return classify_by_model(cleaned, language, provider, history)
         except Exception as exc:
             logger.warning("Intent classification unavailable: %s", exc)
 

@@ -5,6 +5,8 @@ from rest_framework import status
 
 from .serializers import AskQuestionSerializer
 
+from chat import history
+
 from rag.services import answer_question
 from rag.providers.qdrant import VectorStoreUnavailable
 from django.shortcuts import render
@@ -29,9 +31,14 @@ class AskQuestionView(APIView):
 
         serializer.is_valid(raise_exception=True)
 
+        question = serializer.validated_data["question"]
+
+        history.conversation_id(request.session)
+
         try:
             result = answer_question(
-                question=serializer.validated_data["question"],
+                question=question,
+                history=history.load(request.session),
             )
         except VectorStoreUnavailable as exc:
             return Response(
@@ -39,7 +46,26 @@ class AskQuestionView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        # Only a completed exchange is stored: a question whose answer failed
+        # would otherwise sit in the history with no reply under it.
+        history.append(request.session, question, result["answer"])
+
         return Response(
             result,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetConversationView(APIView):
+    """"New chat": forget the thread, keep the session (and any login)."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        conversation_id = history.reset(request.session)
+
+        return Response(
+            {"conversation_id": conversation_id},
             status=status.HTTP_200_OK,
         )

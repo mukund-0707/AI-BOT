@@ -68,6 +68,12 @@ Grounding rules:
 6. When asked for the full text of a section, or for "everything" about it,
    reproduce it completely, including every table row. Do not summarise,
    condense, or drop rows.
+7. The earlier turns are the user's previous questions, there so you can tell
+   what this one refers to - "iska", "uske baad", "aur?". They are not evidence
+   and they are not answered again. Anything you told the user before is gone
+   unless this Context still contains it: never repeat it and never confirm it,
+   not even when asked to say it again. Rule 4 applies instead, and every fact in
+   your answer must be findable in the Context above.
 
 Language rules:
 - The "Answer language" instruction at the end of the message tells you which
@@ -168,6 +174,12 @@ Hard rules:
   when it opens with a greeting.
 - A named topic always beats "overview": "brief info about leave policy" is
   "knowledge", plain "brief info" is "overview".
+- search_query must stand on its own. A follow-up carries no topic of its own -
+  "aur carry forward ka?", "iska matlab?", "uske baad kya" - so take the topic
+  from the recent conversation and write it into the query. Someone reading the
+  query alone must know what is being searched for.
+- A follow-up about earlier content is "knowledge", not "small_talk", however
+  short it is.
 - Output the JSON object only. No extra keys, no comments.
 
 Examples:
@@ -182,6 +194,14 @@ Mujhe leave policy ka process chahiye -> {{"intent": "knowledge", "language": "h
 ye kaise kaam karta he -> {{"intent": "knowledge", "language": "hinglish", "search_query": "how it works"}}
 यह कैसे काम करता है -> {{"intent": "knowledge", "language": "hi", "search_query": "how it works"}}
 AWS account 4471 ka owner kaun hai -> {{"intent": "knowledge", "language": "hinglish", "search_query": "AWS account 4471 owner"}}
+
+Examples with a conversation above the message:
+[user: what is the leave policy | assistant: Earned leave is 12 days a year...]
+aur carry forward ka? -> {{"intent": "knowledge", "language": "hinglish", "search_query": "leave carry forward rules"}}
+[user: notice period kitna hai | assistant: The notice period is 60 days...]
+iska matlab? -> {{"intent": "knowledge", "language": "hinglish", "search_query": "notice period meaning"}}
+[user: what is the leave policy | assistant: Earned leave is 12 days a year...]
+thanks -> {{"intent": "small_talk", "language": "en", "search_query": ""}}
 """.strip()
 
 
@@ -284,6 +304,17 @@ Message:
     return prompt
 
 
-def build_intent_prompt(message):
+def build_intent_prompt(message, history=None):
+    """The conversation goes above the message, because that is its only job here.
 
-    return f"Message:\n{message}"
+    Without it a follow-up has no topic to rewrite into a standalone query.
+    """
+
+    if not history:
+        return f"Message:\n{message}"
+
+    conversation = "\n".join(
+        f"{entry['role']}: {entry['text']}" for entry in history
+    )
+
+    return f"Recent conversation (oldest first):\n{conversation}\n\nMessage:\n{message}"

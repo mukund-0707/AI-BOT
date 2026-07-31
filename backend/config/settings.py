@@ -186,3 +186,11 @@ RAG_INTENT_TIMEOUT = 10
 # Overview uses opening chunks from indexed documents instead of topic search.
 RAG_OVERVIEW_MAX_DOCUMENTS = 5
 RAG_OVERVIEW_DOC_CHUNKS = 3
+
+# Conversation memory. The session keeps more than the model sees: storing a
+# message is free, sending one is prompt on every call.
+RAG_HISTORY_LIMIT = 20  # messages handed to the model, both roles
+RAG_HISTORY_STORE_LIMIT = 40  # messages kept in the session
+RAG_HISTORY_CHAR_BUDGET = 6000  # total characters of history per request
+RAG_HISTORY_MESSAGE_CHARS = 700  # per-message clip before budgeting
+RAG_INTENT_HISTORY_MESSAGES = 6  # turns shown to the classifier

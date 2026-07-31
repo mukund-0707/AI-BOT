@@ -62,6 +62,12 @@ const Api = {
         });
     },
 
+    resetConversation() {
+        return this.request("/api/chat/new/", {
+            method: "POST",
+        });
+    },
+
     askQuestion(documentId, question) {
         return this.request("/api/chat/ask/", {
             method: "POST",

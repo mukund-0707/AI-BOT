@@ -18,6 +18,26 @@ const Chat = {
                 this.sendMessage();
             }
         });
+
+        if (UI.elements.newChatButton) {
+            UI.elements.newChatButton.addEventListener("click", () => {
+                this.startNewConversation();
+            });
+        }
+    },
+
+    async startNewConversation() {
+        // Mid-answer the reply would land in a conversation that no longer exists.
+        if (AppState.isSending) {
+            return;
+        }
+
+        try {
+            await Api.resetConversation();
+            this.renderWelcomeMessage();
+        } catch (error) {
+            this.renderStatusMessage(error.message, "error");
+        }
     },
 
     escapeHtml(text) {

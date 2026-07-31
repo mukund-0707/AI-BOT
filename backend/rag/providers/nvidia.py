@@ -131,20 +131,43 @@ class NVIDIAProvider:
 
         return strip_reasoning(response.choices[0].message.content)
 
-    def generate_answer(self, system_prompt: str, user_prompt: str):
+    def generate_answer(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict] | None = None,
+    ):
+        """`history` is sent as real chat turns, not pasted into the prompt.
+
+        The model treats prior turns as things that were said; text inside the
+        user message reads as material to answer from.
+        """
+
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            }
+        ]
+
+        for entry in history or []:
+            messages.append(
+                {
+                    "role": entry["role"],
+                    "content": entry["text"],
+                }
+            )
+
+        messages.append(
+            {
+                "role": "user",
+                "content": user_prompt,
+            }
+        )
 
         response = self.client.chat.completions.create(
             model=settings.NVIDIA_CHAT_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
+            messages=messages,
             temperature=0.2,
             top_p=0.9,
             max_tokens=1200,

@@ -14,6 +14,7 @@ const UI = {
             chatWrapper: document.getElementById("chatWrapper"),
             messageInput: document.getElementById("messageInput"),
             sendButton: document.getElementById("sendButton"),
+            newChatButton: document.getElementById("newChatButton"),
         };
 
         this.elements.messageInput.addEventListener("input", () => {

@@ -4,7 +4,7 @@ from django.test import TestCase, override_settings
 
 from documents.models import Document
 
-from rag import intents, services
+from rag import history, intents, services
 from rag.prompts import EMPTY_CORPUS, NOT_FOUND
 
 
@@ -413,6 +413,218 @@ class RewrittenQueryTest(TestCase):
         _, user_prompt = self.nvidia.generate_answer.call_args[0]
         self.assertIn(question, user_prompt)
         self.assertIn("Answer language: Hinglish", user_prompt)
+
+
+def exchange(index, answer_chars=10):
+    return [
+        {"role": "user", "text": f"question {index}"},
+        {"role": "assistant", "text": "a" * answer_chars},
+    ]
+
+
+class HistoryWindowTest(TestCase):
+    """The rolling window: tail slice, no orphan reply, then a char budget."""
+
+    def conversation(self, pairs, answer_chars=10):
+        messages = []
+
+        for index in range(pairs):
+            messages.extend(exchange(index, answer_chars))
+
+        return messages
+
+    def test_short_history_passes_through(self):
+        messages = self.conversation(2)
+
+        self.assertEqual(history.window(messages, limit=20), messages)
+
+    def test_only_the_tail_is_kept(self):
+        messages = self.conversation(6)  # 12 messages
+
+        kept = history.window(messages, limit=4)
+
+        self.assertEqual([entry["text"] for entry in kept][0], "question 4")
+        self.assertEqual(len(kept), 4)
+
+    def test_window_never_opens_on_an_assistant_message(self):
+        messages = self.conversation(6)
+
+        kept = history.window(messages, limit=5)
+
+        # The slice would have started on an answer, so that answer is dropped.
+        self.assertEqual(kept[0]["role"], "user")
+        self.assertEqual(len(kept), 4)
+
+    def test_long_messages_are_clipped(self):
+        messages = self.conversation(1, answer_chars=500)
+
+        kept = history.window(messages, limit=20, message_chars=100)
+
+        self.assertTrue(kept[1]["text"].endswith("..."))
+        self.assertLessEqual(len(kept[1]["text"]), 104)
+
+    def test_budget_drops_whole_pairs_from_the_front(self):
+        messages = self.conversation(4, answer_chars=100)
+
+        kept = history.window(messages, limit=20, char_budget=250)
+
+        self.assertLessEqual(history.total_chars(kept), 250)
+        self.assertEqual(kept[0]["role"], "user")
+
+    def test_empty_history(self):
+        self.assertEqual(history.window(None, limit=20), [])
+        self.assertEqual(history.window([], limit=20), [])
+
+    def test_blank_messages_are_skipped(self):
+        messages = [
+            {"role": "user", "text": "question"},
+            {"role": "assistant", "text": ""},
+        ]
+
+        self.assertEqual(len(history.window(messages, limit=20)), 1)
+
+
+@override_settings(RAG_ENABLE_LLM_INTENT=False)
+class HistoryRoutingTest(TestCase):
+    """History has to reach the classifier and the answer call, and only those."""
+
+    def setUp(self):
+        nvidia_patch = patch.object(services, "nvidia")
+        qdrant_patch = patch.object(services, "qdrant")
+
+        self.nvidia = nvidia_patch.start()
+        self.qdrant = qdrant_patch.start()
+
+        self.addCleanup(nvidia_patch.stop)
+        self.addCleanup(qdrant_patch.stop)
+
+        self.nvidia.generate_embedding.return_value = [0.1]
+        self.nvidia.generate_answer.return_value = "**Answer**"
+        self.nvidia.rerank.return_value = [chunk()]
+        self.qdrant.search_chunks.return_value = [chunk()]
+        self.qdrant.with_neighbours.return_value = [chunk()]
+
+        self.history = [
+            {"role": "user", "text": "what is the leave policy"},
+            {"role": "assistant", "text": "Earned leave is 12 days a year."},
+        ]
+
+    def test_knowledge_answer_forwards_only_the_user_turns(self):
+        """Its own past answers are a fact source the model cannot resist."""
+
+        services.answer_question("and the notice period?", history=self.history)
+
+        self.assertEqual(
+            self.nvidia.generate_answer.call_args.kwargs["history"],
+            [{"role": "user", "text": "what is the leave policy"}],
+        )
+
+    def test_no_assistant_text_reaches_the_answer_call(self):
+        services.answer_question("and the notice period?", history=self.history)
+
+        forwarded = self.nvidia.generate_answer.call_args.kwargs["history"]
+
+        self.assertTrue(all(entry["role"] == "user" for entry in forwarded))
+
+    def test_the_classifier_still_sees_both_roles(self):
+        """It only writes a search query, so prior answers are safe there."""
+
+        with patch.object(services.intents, "classify") as classify:
+            classify.return_value = {
+                "intent": intents.KNOWLEDGE,
+                "language": intents.EN,
+                "search_query": "notice period",
+                "source": "model",
+            }
+
+            services.answer_question("and the notice period?", history=self.history)
+
+        self.assertEqual(classify.call_args.kwargs["history"], self.history)
+
+    def test_small_talk_forwards_history(self):
+        services.answer_question("thanks", history=self.history)
+
+        self.assertEqual(
+            self.nvidia.generate_answer.call_args.kwargs["history"],
+            self.history,
+        )
+
+    def test_overview_ignores_history(self):
+        self.qdrant.sample_chunks.return_value = [chunk(score=None)]
+
+        services.answer_question("give me context", history=self.history)
+
+        self.assertNotIn("history", self.nvidia.generate_answer.call_args.kwargs)
+
+    def test_history_is_optional(self):
+        """Every existing caller passes one argument and must keep working."""
+
+        result = services.answer_question("what is the leave policy")
+
+        self.assertEqual(result["answer"], "**Answer**")
+        self.assertEqual(
+            self.nvidia.generate_answer.call_args.kwargs["history"],
+            [],
+        )
+
+    @override_settings(RAG_HISTORY_LIMIT=2)
+    def test_only_the_window_is_forwarded(self):
+        long_history = self.history + [
+            {"role": "user", "text": "and sick leave?"},
+            {"role": "assistant", "text": "8 days a year."},
+        ]
+
+        services.answer_question("and the notice period?", history=long_history)
+
+        # Window is the last 2 messages; only the user one survives the filter.
+        self.assertEqual(
+            self.nvidia.generate_answer.call_args.kwargs["history"],
+            [{"role": "user", "text": "and sick leave?"}],
+        )
+
+
+class FollowUpClassificationTest(TestCase):
+    """The rewrite is the whole reason history reaches the classifier."""
+
+    def test_history_reaches_the_classifier_prompt(self):
+        provider = MagicMock()
+        provider.classify.return_value = (
+            '{"intent": "knowledge", "language": "hinglish",'
+            ' "search_query": "leave carry forward rules"}'
+        )
+        past = [
+            {"role": "user", "text": "leave policy kya hai"},
+            {"role": "assistant", "text": "Earned leave 12 din."},
+        ]
+
+        decision = intents.classify("aur carry forward ka?", provider, history=past)
+
+        _, user_prompt = provider.classify.call_args[0]
+        self.assertIn("leave policy kya hai", user_prompt)
+        # normalise() strips the trailing "?" - routing only, the answer prompt
+        # still gets the question as the user typed it.
+        self.assertIn("aur carry forward ka", user_prompt)
+        self.assertEqual(decision["search_query"], "leave carry forward rules")
+
+    def test_rules_still_win_without_asking_the_model(self):
+        provider = MagicMock()
+        past = [{"role": "user", "text": "leave policy kya hai"}]
+
+        decision = intents.classify("hi", provider, history=past)
+
+        self.assertEqual(decision["intent"], intents.SMALL_TALK)
+        provider.classify.assert_not_called()
+
+    def test_no_history_keeps_the_old_prompt(self):
+        provider = MagicMock()
+        provider.classify.return_value = (
+            '{"intent": "knowledge", "language": "en", "search_query": "notice period"}'
+        )
+
+        intents.classify("what is the notice period", provider)
+
+        _, user_prompt = provider.classify.call_args[0]
+        self.assertNotIn("Recent conversation", user_prompt)
 
 
 class BuildSourcesTest(TestCase):
