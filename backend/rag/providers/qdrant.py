@@ -20,13 +20,14 @@ from qdrant_client.http.exceptions import (
     UnexpectedResponse,
 )
 
+import logging
 import re
 import uuid
 import zlib
 from collections import Counter
 
-# Namespace for deterministic point ids. Re-indexing a document then overwrites
-# its existing points instead of inserting a second copy of every chunk.
+logger = logging.getLogger(__name__)
+
 POINT_NAMESPACE = uuid.UUID("6f2d1c4e-9a3b-4f5e-8c7d-1b2a3c4d5e6f")
 
 DENSE = "dense"
@@ -209,9 +210,58 @@ class QdrantProvider:
                     "text": point.payload["text"],
                 }
             )
-        print("OUTPUT:", output)
+        logger.debug("Fused %d unique candidates", len(output))
 
         return output
+
+    def sample_chunks(self, document_ids, per_document):
+        """The opening chunks of each document, for questions with no topic.
+
+        "Give me context" cannot be searched for: there is nothing to match, so
+        fusion returns arbitrary chunks and the reranker drops them all. Point
+        ids are deterministic, so the start of every document can be read
+        directly instead - no query, no extra index.
+        """
+
+        ids = [
+            point_id(document_id, chunk_index)
+            for document_id in document_ids
+            for chunk_index in range(per_document)
+        ]
+
+        if not ids:
+            return []
+
+        try:
+            points = self.client.retrieve(
+                collection_name=settings.QDRANT_COLLECTION_NAME,
+                ids=ids,
+                with_payload=True,
+            )
+        except ResponseHandlingException as exc:
+            raise connection_error() from exc
+        except UnexpectedResponse as exc:
+            # Nothing has been indexed yet, so the collection does not exist.
+            if exc.status_code == 404:
+                return []
+            raise
+
+        chunks = [
+            {
+                "score": None,
+                "document_id": point.payload["document_id"],
+                "file_name": point.payload["file_name"],
+                "page_number": point.payload["page_number"],
+                "chunk_index": point.payload["chunk_index"],
+                "text": point.payload["text"],
+            }
+            for point in points
+        ]
+
+        return sorted(
+            chunks,
+            key=lambda chunk: (chunk["file_name"], chunk["chunk_index"]),
+        )
 
     def with_neighbours(self, chunks):
         """Add the chunk before and after each hit, in document order.

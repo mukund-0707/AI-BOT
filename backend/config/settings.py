@@ -177,3 +177,12 @@ RAG_TOP_N = 6
 
 # Calibrated on evaluation data. Recalibrate if the reranker model or corpus changes.
 RAG_RERANK_FLOOR = -11.0
+
+# Query understanding. Regex always runs; this only enables LLM fallback.
+RAG_ENABLE_LLM_INTENT = True
+RAG_INTENT_MAX_TOKENS = 80
+RAG_INTENT_TIMEOUT = 10
+
+# Overview uses opening chunks from indexed documents instead of topic search.
+RAG_OVERVIEW_MAX_DOCUMENTS = 5
+RAG_OVERVIEW_DOC_CHUNKS = 3

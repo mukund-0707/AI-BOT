@@ -38,9 +38,7 @@ def extract_docx(file_path):
 
                 if header and index:
                     values = [
-                        f"{head}: {value}"
-                        for head, value in zip(header, row)
-                        if value
+                        f"{head}: {value}" for head, value in zip(header, row) if value
                     ]
                 else:
                     values = [value for value in row if value]

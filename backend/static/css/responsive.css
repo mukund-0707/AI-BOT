@@ -68,4 +68,17 @@
         height:44px;
     }
 
+    /* A phone-width bubble cannot fit most tables, so let the columns keep their
+       width and scroll instead of wrapping every cell down to one word. */
+    .message-body table{
+        width:auto;
+        min-width:100%;
+        font-size:13px;
+    }
+
+    .message-body th,
+    .message-body td{
+        padding:6px 9px;
+    }
+
 }

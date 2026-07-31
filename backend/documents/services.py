@@ -66,7 +66,7 @@ class DocumentService:
                             "text": text,
                         }
                     )
-                    print("CLEANED_PAGES: \n",cleaned_pages)
+                    print("CLEANED_PAGES: \n", cleaned_pages)
 
             chunks = create_chunks(cleaned_pages)
             # print("CHUNKS: \n", chunks)

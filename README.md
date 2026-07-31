@@ -26,9 +26,14 @@ The codebase includes the following working pieces:
 - Vector indexing and retrieval through Qdrant.
 - Reranking and answer generation through NVIDIA APIs.
 
-### Important limitation
+### Known limitations
 
-Document upload and indexing currently happen synchronously inside the request. This means large documents can make the request slow or time out.
+- **Synchronous ingestion.** Document upload and indexing happen inside the request. Large documents can make the request slow or time out.
+- **The ask endpoint is unauthenticated.** `AskQuestionView` uses `AllowAny`, so anyone who can reach the server can query the indexed documents. Uploading and deleting do require a login.
+- **Source citations collapse for DOCX and TXT.** Citations are de-duplicated by file name and page number, and those formats have no page number, so a multi-chunk answer still reports a single source.
+- **No conversation memory.** Every question is answered independently, so follow-ups such as "explain that in more detail" are matched literally and usually retrieve nothing.
+- **Corpus-wide requests are not handled.** A bare "summarise this document" matches no individual passage and is answered with the not-found message. This needs intent routing or stored per-document summaries.
+- **No automated tests.** See section 17.
 
 ## 2. Key features
 
@@ -86,7 +91,7 @@ The project declares dependencies in [pyproject.toml](pyproject.toml), but the v
 ### 6.1 Create and activate a virtual environment
 
 ```bash
-cd /workspaces/AI-BOT
+cd /path/to/AI-BOT
 python -m venv .venv
 source .venv/bin/activate
 ```
@@ -167,6 +172,19 @@ python manage.py createsuperuser
 
 The authentication endpoint expects a valid Django user. The Postman collection defaults to the username `mukund` and expects you to set the password in the environment.
 
+### 8.1 Re-indexing documents
+
+`reindex_documents` re-extracts, re-embeds, and re-uploads stored documents into Qdrant. Run it after wiping or recreating the Qdrant storage, after switching `QDRANT_COLLECTION_NAME`, or after any change to extraction or chunking — the vectors already in Qdrant are not updated automatically.
+
+```bash
+cd backend
+python manage.py reindex_documents                  # every document
+python manage.py reindex_documents --ids 1 2        # only these document ids
+python manage.py reindex_documents --purge-orphans  # also drop vectors whose document row is gone
+```
+
+The command reads the original files from `backend/media/`, so those files must still be present.
+
 ## 9. Run the application
 
 ### 9.1 Start Qdrant
@@ -240,6 +258,14 @@ The extractors are in [backend/documents/extractors](backend/documents/extractor
 - [backend/documents/extractors/docx.py](backend/documents/extractors/docx.py) extracts paragraphs and tables from DOCX files.
 - [backend/documents/extractors/text.py](backend/documents/extractors/text.py) reads plain text files.
 
+The DOCX extractor walks the document body in order rather than reading `document.paragraphs`, because paragraph iteration alone skips every table. On the reference runbook in this repository that accounted for roughly 20% of the document text, including the contact, environment, and parameter tables. It emits:
+
+- **Headings** prefixed with Markdown hashes (`#`, `##`, `###`) matching the Word heading level, so a chunk taken from the middle of a section still carries its section title. The system prompt tells the model these are document headings, which is what lets it answer questions about document structure.
+- **Table rows** as `label | value`, one row per line, which keeps a label next to its value when a table is split across chunks.
+- **Wide tables** (three or more columns) with the header cells repeated on every data row as `header: value`. Without this, a row that lands in a different chunk from its header row is unreadable.
+
+Only PDFs carry real page numbers. DOCX and TXT are extracted as a single unnumbered section, so `page_number` is `null` for those formats.
+
 ### Text cleaning
 
 The cleaner in [backend/documents/text_cleaner.py](backend/documents/text_cleaner.py) removes extra whitespace and normalizes line breaks before chunking.
@@ -268,31 +294,52 @@ Vector storage and retrieval are implemented in [backend/rag/providers/qdrant.py
 
 - The app creates a Qdrant collection when needed.
 - Each chunk is stored as a point with:
-  - dense vector data
-  - sparse vector data
+  - a named dense vector (`dense`), from the NVIDIA embedding model
+  - a named sparse vector (`text`), built from token frequencies. Qdrant is configured with the `IDF` modifier, so inverse document frequency is computed server-side and no extra embedding model or dependency is needed for the keyword side.
   - document metadata such as `document_id`, `file_name`, `page_number`, `chunk_index`, and `text`
-- The search flow uses both dense and sparse retrieval and then fuses the results.
+- Search runs a dense prefetch and a sparse prefetch, then fuses them with Reciprocal Rank Fusion inside Qdrant. Dense retrieval is weak on exact literals such as account numbers and repository names, which the sparse side ranks first; fusion means neither retriever has to win outright.
+- Point ids are derived deterministically from `document_id` and `chunk_index`, so re-indexing a document overwrites its points instead of duplicating them.
+
+**Collection migration.** Named dense and sparse vectors cannot be added to a collection that was created without them. The default collection name is therefore `document_chunks_v2`. If you are coming from an older checkout that used `document_chunks`, point `QDRANT_COLLECTION_NAME` at the new name and re-index (see section 8.1). The old collection is left untouched and can be deleted once you are satisfied with the new one.
+
+### Neighbour expansion
+
+After reranking, [backend/rag/providers/qdrant.py](backend/rag/providers/qdrant.py) pulls in the chunk immediately before and after each surviving hit and orders the whole set by document position.
+
+A section that spans a chunk boundary would otherwise only ever return its first half: the continuation answers no question on its own, so it ranks too low to be retrieved. Neighbours are therefore selected by position rather than by score. They are added to the prompt context only; citations are still built from the reranked hits.
 
 ### Reranking
 
 The reranking step is supported in [backend/rag/services.py](backend/rag/services.py).
 
-- The code first searches Qdrant.
-- It then runs the NVIDIA reranker over the search results.
-- If reranking is unavailable, the code falls back to the already ordered results.
+- The code first searches Qdrant, which returns a wide candidate set (24 by default). No similarity threshold is applied at this stage: retrieval only has to surface candidates, and cosine scores are not comparable between different questions.
+- It then runs the NVIDIA reranker over those candidates. The reranker is a cross-encoder, and its logits *are* comparable across questions, so a single constant can act as the relevance gate.
+- If reranking is unavailable, the code logs a warning and falls back to the fused retrieval order so the chat keeps working.
 
 The default rerank settings in [backend/config/settings.py](backend/config/settings.py) are:
 
-- `RAG_TOP_N = 6`
-- `RAG_RERANK_FLOOR = -11.0`
+- `RAG_TOP_N = 6` — chunks handed to the model after reranking
+- `RAG_RERANK_FLOOR = -11.0` — logit below which a passage is treated as irrelevant
+
+The floor was calibrated against this repository's reference document over fourteen questions: the lowest-scoring chunk that genuinely contained an answer scored about `-10.2`, while the best chunk for a question the corpus could not answer scored about `-12.1`. The default sits between the two. **Recalibrate it if you change the reranker model or index a materially different corpus**, and do so against a labelled question set rather than by feel.
+
+Note that reranking is served from a different host (`https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking`) than chat and embeddings. `NVIDIA_BASE_URL` does not affect it, which is why the reranker is called over plain HTTP rather than through the OpenAI-compatible client.
 
 ### Prompt building and answer generation
 
 Prompt construction is in [backend/rag/prompts.py](backend/rag/prompts.py).
 
-The system prompt instructs the model to answer from the provided context and to avoid unsupported claims. The prompt builder creates a context block from the retrieved chunks and places the question after that context.
+The prompt builder creates a context block from the retrieved chunks and places the question after that context. The system prompt covers:
+
+- **How to read the context.** It explains that `#`/`##`/`###` lines are section headings copied from the document and that passages are supplied in document order, which is what allows structural questions ("what section follows X") to be answered. It also explains that `|` lines are table rows.
+- **Grounding.** Answer only from the context, and never speculate — the phrasings the model reached for ("it might be", "typically", "usually") are named explicitly, because a general "do not guess" instruction was not enough to stop it inventing plausible document structure.
+- **Partial answers.** Preferred over refusing outright, with a short line naming what is missing.
+- **Verbatim reproduction.** Requests for the full text of a section must reproduce every table row rather than summarising.
+- **Not-found handling.** Only when the context is entirely unrelated, reply with the exact not-found sentence, which the source builder also keys on to suppress citations.
 
 Answer generation is performed by [backend/rag/providers/nvidia.py](backend/rag/providers/nvidia.py), using the configured chat model.
+
+The system prompt begins with `/no_think`, which suppresses the reasoning trace on the `nemotron` chat models. The directive is honoured inconsistently: when it is ignored, the reasoning trace consumes the token budget, which shows up as occasional slow responses and answers that stop mid-sentence.
 
 ## 12. API documentation
 
@@ -393,13 +440,26 @@ POST /api/chat/ask/
   "answer": "The answer generated from the retrieved context.",
   "sources": [
     {
-      "document_name": "sample.txt",
-      "page_number": 1,
-      "score": 0.123
+      "document_name": "runbook.docx",
+      "page_number": null,
+      "score": -4.21
     }
   ]
 }
 ```
+
+`score` is the reranker logit, not a similarity value. It is unbounded and usually negative; higher is more relevant. Anything below `RAG_RERANK_FLOOR` is dropped before the answer is generated. `page_number` is `null` for DOCX and TXT sources.
+
+When no passage clears the floor, the endpoint still returns `200` with the not-found message and an empty `sources` list:
+
+```json
+{
+  "answer": "I couldn't find information about this in the knowledge base.",
+  "sources": []
+}
+```
+
+This endpoint currently permits unauthenticated requests; see the known limitations in section 1.
 
 ### 12.5 Chat UI
 
@@ -495,7 +555,17 @@ This usually means Qdrant is not reachable. Make sure the Qdrant service is runn
 
 ### `403` on chat ask requests
 
-The chat ask endpoint uses Django session authentication and CSRF protection once a session exists. After logging in, make sure the client sends the current CSRF token.
+The chat ask endpoint does not require a login, but Django's session authentication enforces CSRF once a session exists. So the request succeeds while logged out and starts returning `403` after logging in unless the client sends the current CSRF token.
+
+### The bot answers "I couldn't find information about this in the knowledge base"
+
+Work outwards from the index before touching the prompt:
+
+1. Confirm the document reached `ready` and that the text is actually in Qdrant. If extraction or chunking changed since the upload, re-index (section 8.1).
+2. Check whether the passage is reaching the model at all. Retrieval fetches 24 candidates, the reranker keeps at most `RAG_TOP_N`, and anything below `RAG_RERANK_FLOOR` is discarded.
+3. A passage that scores just below the floor is the common cause. Recalibrate against a labelled question set rather than lowering the floor until the answer appears — too low a floor lets unanswerable questions through and produces confident nonsense.
+
+Corpus-wide requests such as "summarise this document" are expected to return this message; see the known limitations in section 1.
 
 ### Upload fails with a validation error
 

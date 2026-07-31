@@ -1,4 +1,5 @@
 """Check how much real content the docx extractor silently drops (tables etc.)."""
+
 import sys
 from pathlib import Path
 
@@ -52,4 +53,6 @@ for path in sorted(MEDIA.glob("*.pdf")):
     pages = extract_pdf(str(path))
     empty = [p["page_number"] for p in pages if not p["text"].strip()]
     chars = sum(len(p["text"]) for p in pages)
-    print(f"  {path.name}: {len(pages)} pages, {chars} chars, empty pages={empty or 'none'}")
+    print(
+        f"  {path.name}: {len(pages)} pages, {chars} chars, empty pages={empty or 'none'}"
+    )

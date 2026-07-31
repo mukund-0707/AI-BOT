@@ -235,6 +235,70 @@
 
 }
 
+/* The renderer wraps every table in .table-scroll: a wide table has to scroll
+   inside the bubble instead of stretching it. */
+
+.message-body .table-scroll{
+
+    margin:0 0 12px;
+
+    overflow-x:auto;
+
+    -webkit-overflow-scrolling:touch;
+
+}
+
+.message-body table{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+    font-size:14px;
+
+}
+
+.message-body th,
+.message-body td{
+
+    padding:8px 12px;
+
+    border:1px solid var(--border);
+
+    text-align:left;
+
+    vertical-align:top;
+
+}
+
+.message-body th{
+
+    background:rgba(124,58,237,.08);
+
+    font-weight:600;
+
+    white-space:nowrap;
+
+}
+
+.message-body tbody tr:nth-child(even) td{
+
+    background:rgba(15,18,32,.03);
+
+}
+
+html[data-theme="dark"] .message-body th{
+
+    background:rgba(167,139,250,.14);
+
+}
+
+html[data-theme="dark"] .message-body tbody tr:nth-child(even) td{
+
+    background:rgba(255,255,255,.03);
+
+}
+
 .message-body code{
 
     padding:2px 6px;

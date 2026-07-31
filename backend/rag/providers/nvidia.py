@@ -1,9 +1,12 @@
+import logging
 import re
 
 import httpx
 from openai import OpenAI
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 # Reasoning models normally return their trace in a separate field, but they
 # occasionally inline it in the answer. Strip it either way.
@@ -94,11 +97,39 @@ class NVIDIAProvider:
             key=lambda ranking: -ranking["logit"],
         )
 
-        return [
+        rerankings_chunk = [
             {**chunks[ranking["index"]], "score": ranking["logit"]}
             for ranking in rankings[:top_n]
             if ranking["logit"] >= floor
         ]
+
+        return rerankings_chunk
+
+    def classify(self, system_prompt: str, user_prompt: str, max_tokens: int):
+        """A routing call, not an answer: greedy, tiny, and quick to give up.
+
+        The caller treats any failure as "this is a question", so a short timeout
+        costs a slightly worse route, never a failed request.
+        """
+
+        response = self.client.chat.completions.create(
+            model=settings.NVIDIA_CHAT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=0,
+            max_tokens=max_tokens,
+            timeout=settings.RAG_INTENT_TIMEOUT,
+        )
+
+        return strip_reasoning(response.choices[0].message.content)
 
     def generate_answer(self, system_prompt: str, user_prompt: str):
 
@@ -118,8 +149,8 @@ class NVIDIAProvider:
             top_p=0.9,
             max_tokens=1200,
         )
-        print("NVIDIA response:", response.choices[0].message.content)
         choice = response.choices[0]
+        logger.debug("Chat finish_reason=%s", choice.finish_reason)
         answer = strip_reasoning(choice.message.content)
 
         if choice.finish_reason == "length" and not answer:

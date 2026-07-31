@@ -1,4 +1,5 @@
 """Prove whether input_type + instruction prefix actually fixes retrieval separation."""
+
 import os
 import sys
 
@@ -63,7 +64,9 @@ print("-" * 86)
 print("gold   = the table chunk that actually answers the question")
 print("margin = gold - best_wrong_chunk. NEGATIVE margin => wrong chunk ranks FIRST.")
 print(f"\nRAG_MIN_SCORE currently = {settings.RAG_MIN_SCORE}")
-print("Gate in rag/services.py:  if results[0]['score'] < RAG_MIN_SCORE -> 'couldn't find information'")
+print(
+    "Gate in rag/services.py:  if results[0]['score'] < RAG_MIN_SCORE -> 'couldn't find information'"
+)
 for name, g, d, u, m in rows:
     verdict = "PASSES gate" if g >= settings.RAG_MIN_SCORE else "BLOCKED by gate"
     print(f"  {name:<48} gold={g:.4f} -> {verdict}")

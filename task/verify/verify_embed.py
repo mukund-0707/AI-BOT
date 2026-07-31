@@ -1,4 +1,5 @@
 """Probe the real NVIDIA embedding endpoint to ground the analysis in actual behaviour."""
+
 import os
 import sys
 
@@ -51,7 +52,9 @@ except Exception as e:
 
 print("\n--- 3) with input_type=passage ---")
 try:
-    vp = embed("The escalation contact is Verena Wanner, verena.wanner@syngenta.com", "passage")
+    vp = embed(
+        "The escalation contact is Verena Wanner, verena.wanner@syngenta.com", "passage"
+    )
     print(f"  OK, dim={len(vp)}")
 except Exception as e:
     print(f"  FAILED: {type(e).__name__}: {e}")
@@ -87,9 +90,13 @@ except Exception as e:
 print("\n--- 6) summarize-style query vs a real chunk (user's reported failure) ---")
 try:
     vs = embed("give me a brief summary")
-    vchunk = embed("The escalation contact is Verena Wanner and the runbook covers registration monitoring.")
+    vchunk = embed(
+        "The escalation contact is Verena Wanner and the runbook covers registration monitoring."
+    )
     print(f"  cos('give me a brief summary', chunk) = {cos(vs, vchunk):.4f}")
-    print(f"  threshold = {settings.RAG_MIN_SCORE} -> "
-          f"{'PASSES' if cos(vs, vchunk) >= settings.RAG_MIN_SCORE else 'BLOCKED (returns not-found)'}")
+    print(
+        f"  threshold = {settings.RAG_MIN_SCORE} -> "
+        f"{'PASSES' if cos(vs, vchunk) >= settings.RAG_MIN_SCORE else 'BLOCKED (returns not-found)'}"
+    )
 except Exception as e:
     print(f"  FAILED: {type(e).__name__}: {e}")

@@ -2,9 +2,20 @@ import logging
 
 from django.conf import settings
 
+from documents.models import Document
+
+from rag import intents
 from rag.prompts import (
+    EMPTY_CORPUS,
+    NOT_FOUND,
+    NO_ANSWER,
+    OVERVIEW_PROMPT,
+    SMALL_TALK_FALLBACK,
+    SMALL_TALK_PROMPT,
     SYSTEM_PROMPT,
+    build_overview_prompt,
     build_prompt,
+    build_small_talk_prompt,
 )
 
 from rag.providers.nvidia import NVIDIAProvider
@@ -16,72 +27,8 @@ nvidia = NVIDIAProvider()
 qdrant = QdrantProvider()
 
 
-# def answer_question(document_id, question):
-
-#     document = Document.objects.filter(
-#         id=document_id,
-#         status=Document.Status.READY,
-#     ).first()
-#     print(f"Document found: {document is not None}")
-#     print("DOCUMENNT:", document)
-#     if not document:
-#         return {
-#             "answer": "The document is not ready for question answering.",
-#             "sources": [],
-#         }
-
-#     question_embedding = nvidia.generate_embedding(question)
-
-#     results = qdrant.search_chunks(
-#         question_embedding=question_embedding,
-#         document_id=document.id,
-#     )
-#     print("Rsults:", results)
-
-#     if not results:
-#         print("No results found for the question.")
-#         return {
-#             "answer": "The answer was not found in the uploaded document.",
-#             "sources": [],
-#         }
-
-#     threshold = getattr(settings, "RAG_MIN_SCORE", 0.40)
-
-#     if results[0]["score"] < threshold:
-#         return {
-#             "answer": "The answer was not found in the uploaded document.",
-#             "sources": [],
-#         }
-
-#     prompt = build_prompt(
-#         question=question,
-#         chunks=results,
-#     )
-
-#     answer = nvidia.generate_answer(
-#         SYSTEM_PROMPT,
-#         prompt,
-#     )
-
-#     sources = []
-
-#     for chunk in results:
-
-#         sources.append(
-#             {
-#                 "document_name": chunk["file_name"],
-#                 "page_number": chunk["page_number"],
-#                 "score": round(chunk["score"], 3),
-#             }
-#         )
-
-#     return {
-#         "answer": answer,
-#         "sources": sources,
-#     }
-
-
-NOT_FOUND = "I couldn't find information about this in the knowledge base."
+def localised(table, language):
+    return table.get(language, table[intents.EN])
 
 
 def rerank(question, results):
@@ -100,28 +47,109 @@ def rerank(question, results):
 
 
 def answer_question(question):
+    """Route first, retrieve second.
 
-    question_embedding = nvidia.generate_embedding(question)
+    Small talk and "give me context" match no passage, so anything that decides
+    from the result set alone answers both with "not found". The intent is
+    settled before a single vector is fetched.
+    """
 
-    results = qdrant.search_chunks(
-        question_embedding=question_embedding,
-        question=question,
+    decision = intents.classify(question, nvidia)
+    logger.debug("Routed %r as %s", question, decision)
+
+    if decision["intent"] == intents.SMALL_TALK:
+        return small_talk_answer(question, decision["language"])
+
+    if decision["intent"] == intents.OVERVIEW:
+        return overview_answer(decision["language"])
+
+    return knowledge_answer(question, decision)
+
+
+def small_talk_answer(question, language):
+    """No retrieval and no citations - there is nothing here to ground."""
+
+    try:
+        answer = nvidia.generate_answer(
+            SMALL_TALK_PROMPT,
+            build_small_talk_prompt(question, language),
+        )
+    except Exception as exc:
+        # A greeting is not worth a 500.
+        logger.warning("Small talk generation failed: %s", exc)
+        answer = ""
+
+    return {
+        "answer": answer or localised(SMALL_TALK_FALLBACK, language),
+        "sources": [],
+    }
+
+
+def overview_answer(language):
+    """Orientation for a user who does not have a specific question yet."""
+
+    document_ids = list(
+        Document.objects.filter(status=Document.Status.READY)
+        .order_by("-created_at")
+        .values_list("id", flat=True)[: settings.RAG_OVERVIEW_MAX_DOCUMENTS]
     )
-    print("Results:", results)
 
-    results = rerank(question, results)
-    print("Rerank results:", results)
+    chunks = qdrant.sample_chunks(
+        document_ids,
+        settings.RAG_OVERVIEW_DOC_CHUNKS,
+    )
+    logger.debug("Overview sampled %d chunks", len(chunks))
 
-
-    if not results:
+    if not chunks:
         return {
-            "answer": NOT_FOUND,
+            "answer": localised(EMPTY_CORPUS, language),
             "sources": [],
         }
 
+    answer = nvidia.generate_answer(
+        OVERVIEW_PROMPT,
+        build_overview_prompt(chunks, language),
+    )
+
+    # An overview invites a question, it does not make a cited claim, so the
+    # sampled pages would be misleading as citations.
+    return {
+        "answer": answer or localised(EMPTY_CORPUS, language),
+        "sources": [],
+    }
+
+
+def knowledge_answer(question, decision):
+
+    language = decision["language"]
+    search_query = decision["search_query"] or question
+
+    question_embedding = nvidia.generate_embedding(search_query)
+
+    # Dense search uses the rewritten English query; sparse search uses both queries.
+    keywords = (
+        search_query if search_query == question else f"{search_query} {question}"
+    )
+
+    results = qdrant.search_chunks(
+        question_embedding=question_embedding,
+        question=keywords,
+    )
+    logger.debug("Retrieved %d candidates", len(results))
+
+    results = rerank(search_query, results)
+    logger.debug("Kept %d chunks after reranking", len(results))
+
+    if not results:
+        return not_found(language)
+
+    chunks = qdrant.with_neighbours(results)
+    logger.debug("Expanded to %d chunks with neighbours", len(chunks))
+
     prompt = build_prompt(
         question=question,
-        chunks=qdrant.with_neighbours(results),
+        chunks=chunks,
+        language=language,
     )
 
     answer = nvidia.generate_answer(
@@ -129,27 +157,36 @@ def answer_question(question):
         prompt,
     )
 
+    if is_no_answer(answer):
+        return not_found(language)
+
     return {
         "answer": answer,
-        "sources": build_sources(answer, results),
+        "sources": build_sources(results),
     }
 
 
-def build_sources(answer, results):
-    """Citations only make sense when the answer actually used the documents."""
+def is_no_answer(answer):
+    """The model refuses with a sentinel, so this check survives translation.
 
-    lowered = answer.lower()
+    Matching on the refusal sentence itself only worked while every answer was
+    English.
+    """
 
-    # `startswith("hi")` would also catch "History...", so match whole words.
-    first_word = lowered.split()[0].strip(".,!") if lowered.split() else ""
-    is_greeting = first_word in {"hi", "hello", "hey"}
+    stripped = (answer or "").strip()
 
-    if (
-        is_greeting
-        or "couldn't find information" in lowered
-        or "which topic" in lowered
-    ):
-        return []
+    return not stripped or NO_ANSWER in stripped.upper()
+
+
+def not_found(language):
+    return {
+        "answer": localised(NOT_FOUND, language),
+        "sources": [],
+    }
+
+
+def build_sources(results):
+    """One citation per document page, in reranked order."""
 
     sources = []
     seen_pages = set()
@@ -161,11 +198,15 @@ def build_sources(answer, results):
             continue
 
         seen_pages.add(unique_key)
+
+        # Chunks pulled in by position rather than by score have no score.
+        score = chunk.get("score")
+
         sources.append(
             {
                 "document_name": chunk["file_name"],
                 "page_number": chunk["page_number"],
-                "score": round(chunk["score"], 3),
+                "score": round(score, 3) if score is not None else None,
             }
         )
 

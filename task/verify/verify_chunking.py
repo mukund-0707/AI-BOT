@@ -1,4 +1,5 @@
 """Reproduce suspected bugs in rag.chunking.create_chunks without touching the project."""
+
 import sys
 
 sys.path.insert(0, r"D:\mukund\AI bot\AI bot\backend")
@@ -45,6 +46,10 @@ t = threading.Thread(target=run, daemon=True)
 t.start()
 t.join(timeout=5)
 if t.is_alive():
-    print("  >>> HANG CONFIRMED: create_chunks did not return within 5s (infinite loop)")
+    print(
+        "  >>> HANG CONFIRMED: create_chunks did not return within 5s (infinite loop)"
+    )
 else:
-    print(f"  returned: {len(result.get('chunks', []))} chunks, err={result.get('err')}")
+    print(
+        f"  returned: {len(result.get('chunks', []))} chunks, err={result.get('err')}"
+    )
