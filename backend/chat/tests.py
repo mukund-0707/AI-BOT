@@ -93,7 +93,6 @@ class AskEndpointTest(TestCase):
 
 
 class ResetEndpointTest(TestCase):
-
     def setUp(self):
         answer_patch = patch("chat.views.answer_question")
         self.answer_question = answer_patch.start()
@@ -114,7 +113,10 @@ class ResetEndpointTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.session[history.HISTORY_KEY], [])
         self.assertNotEqual(self.client.session[history.CONVERSATION_KEY], old_id)
-        self.assertEqual(response.json()["conversation_id"], self.client.session[history.CONVERSATION_KEY])
+        self.assertEqual(
+            response.json()["conversation_id"],
+            self.client.session[history.CONVERSATION_KEY],
+        )
 
     def test_the_next_question_starts_clean(self):
         self.client.post(

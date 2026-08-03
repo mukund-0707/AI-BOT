@@ -12,7 +12,6 @@ from rag.providers.qdrant import VectorStoreUnavailable
 
 
 class UploadDocumentView(APIView):
-
     authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated]
 

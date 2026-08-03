@@ -24,7 +24,6 @@ def strip_reasoning(text):
 
 
 class NVIDIAProvider:
-
     def __init__(self):
         self.client = OpenAI(
             api_key=settings.NVIDIA_API_KEY,

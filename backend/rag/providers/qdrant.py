@@ -70,7 +70,6 @@ def connection_error():
 
 
 class QdrantProvider:
-
     def __init__(self):
 
         self.client = QdrantClient(
@@ -190,7 +189,6 @@ class QdrantProvider:
         seen_text = set()
 
         for point in results.points:
-
             # The same passage is often indexed more than once - the file was
             # uploaded twice, or an older index run left its points behind.
             fingerprint = point.payload["text"].strip()

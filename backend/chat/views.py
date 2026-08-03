@@ -57,7 +57,7 @@ class AskQuestionView(APIView):
 
 
 class ResetConversationView(APIView):
-    """"New chat": forget the thread, keep the session (and any login)."""
+    """ "New chat": forget the thread, keep the session (and any login)."""
 
     permission_classes = [AllowAny]
 

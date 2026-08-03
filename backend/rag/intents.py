@@ -36,7 +36,10 @@ HI = "hi"
 
 LANGUAGES = {EN, HINGLISH, HI}
 
-DEVANAGARI = re.compile(r"[ऀ-ॿ] | in\s+hindi | in\s+devanagari | hindi | hindi\s+me\s+do", re.IGNORECASE | re.VERBOSE)
+DEVANAGARI = re.compile(
+    r"[ऀ-ॿ] | in\s+hindi | in\s+devanagari | hindi | hindi\s+me\s+do",
+    re.IGNORECASE | re.VERBOSE,
+)
 
 # Hindi function words (Latin script) used for Hinglish detection.
 HINGLISH_MARKERS = re.compile(

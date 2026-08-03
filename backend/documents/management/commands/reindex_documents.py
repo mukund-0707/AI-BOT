@@ -56,7 +56,6 @@ class Command(BaseCommand):
         failed = 0
 
         for document in documents:
-
             if not Path(document.file.path).exists():
                 failed += 1
                 self.stderr.write(

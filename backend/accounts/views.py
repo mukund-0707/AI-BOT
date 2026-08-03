@@ -9,7 +9,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 @method_decorator(csrf_exempt, name="dispatch")
 class LoginAPIView(APIView):
-
     permission_classes = [AllowAny]
     authentication_classes = []
 

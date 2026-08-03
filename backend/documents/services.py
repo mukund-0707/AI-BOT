@@ -14,7 +14,6 @@ from rag.providers.qdrant import QdrantProvider
 
 
 class DocumentService:
-
     @staticmethod
     def upload(file):
         extension = Path(file.name).suffix.lower().replace(".", "")
@@ -45,7 +44,6 @@ class DocumentService:
     def process_document(document):
 
         try:
-
             document.status = Document.Status.PROCESSING
             document.save(update_fields=["status"])
 
@@ -55,11 +53,9 @@ class DocumentService:
             cleaned_pages = []
 
             for page in pages:
-
                 text = clean_text(page["text"])
 
                 if text:
-
                     cleaned_pages.append(
                         {
                             "page_number": page["page_number"],
@@ -127,7 +123,6 @@ class DocumentService:
             )
 
         except Exception as exc:
-
             document.status = Document.Status.FAILED
             document.error_message = str(exc)
 

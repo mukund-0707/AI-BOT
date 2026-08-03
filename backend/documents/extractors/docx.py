@@ -9,7 +9,6 @@ def extract_docx(file_path):
     blocks = []
 
     for child in document.element.body.iterchildren():
-
         if child.tag.endswith("}p"):
             paragraph = Paragraph(child, document)
             text = paragraph.text.strip()
@@ -35,7 +34,6 @@ def extract_docx(file_path):
             header = rows[0] if len(table.columns) >= 3 else None
 
             for index, row in enumerate(rows):
-
                 if header and index:
                     values = [
                         f"{head}: {value}" for head, value in zip(header, row) if value

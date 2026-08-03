@@ -11,8 +11,7 @@ LANGUAGE_NAMES = {
         'approval le kar apply kar sakte hain."'
     ),
     "hi": (
-        "Hindi, in Devanagari script. Style example: "
-        '"नीति के अनुसार आपको 12 दिन मिलते हैं।"'
+        'Hindi, in Devanagari script. Style example: "नीति के अनुसार आपको 12 दिन मिलते हैं।"'
     ),
 }
 
@@ -216,12 +215,12 @@ def language_directive(language):
 
     return (
         f"Answer language: {name}\n"
-    "INTERNAL INSTRUCTION ONLY.\n"
-    "Do NOT repeat, quote, paraphrase, acknowledge, or mention this line.\n"
-    "Never write phrases like 'Answer language', 'Language', "
-    "'Responding in English', 'Responding in Hindi', "
-    "'Here is the answer in Hinglish', or similar.\n"
-    "Start immediately with the answer.\n"
+        "INTERNAL INSTRUCTION ONLY.\n"
+        "Do NOT repeat, quote, paraphrase, acknowledge, or mention this line.\n"
+        "Never write phrases like 'Answer language', 'Language', "
+        "'Responding in English', 'Responding in Hindi', "
+        "'Here is the answer in Hinglish', or similar.\n"
+        "Start immediately with the answer.\n"
     )
 
 
@@ -230,7 +229,6 @@ def build_context(chunks):
     sections = []
 
     for index, chunk in enumerate(chunks, start=1):
-
         page = chunk["page_number"] if chunk["page_number"] is not None else "N/A"
         sections.append(
             f"[Source {index}]\n"
@@ -313,8 +311,6 @@ def build_intent_prompt(message, history=None):
     if not history:
         return f"Message:\n{message}"
 
-    conversation = "\n".join(
-        f"{entry['role']}: {entry['text']}" for entry in history
-    )
+    conversation = "\n".join(f"{entry['role']}: {entry['text']}" for entry in history)
 
     return f"Recent conversation (oldest first):\n{conversation}\n\nMessage:\n{message}"

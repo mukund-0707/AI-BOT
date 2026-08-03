@@ -4,7 +4,6 @@ from documents.models import Document
 
 
 class AskQuestionSerializer(serializers.Serializer):
-
     question = serializers.CharField()
 
     def validate_question(self, value):

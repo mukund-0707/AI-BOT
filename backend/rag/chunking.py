@@ -53,7 +53,6 @@ def create_chunks(
     chunk_index = 0
 
     for page in pages:
-
         pieces = _merge_short_tail(_split_page(page["text"], chunk_size, overlap))
         # print("PIECES: \n", pieces)
 

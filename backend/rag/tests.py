@@ -396,9 +396,7 @@ class RewrittenQueryTest(TestCase):
 
         services.answer_question(question)
 
-        self.nvidia.generate_embedding.assert_called_once_with(
-            "leave policy process"
-        )
+        self.nvidia.generate_embedding.assert_called_once_with("leave policy process")
         # The keyword side keeps the original wording too, so a literal the
         # rewrite dropped can still match.
         keywords = self.qdrant.search_chunks.call_args.kwargs["question"]
@@ -628,7 +626,6 @@ class FollowUpClassificationTest(TestCase):
 
 
 class BuildSourcesTest(TestCase):
-
     def test_deduplicates_pages(self):
         results = [
             chunk(page=2, index=4),
