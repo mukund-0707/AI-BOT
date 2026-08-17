@@ -1,11 +1,14 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from django.conf import settings
 from django.test import TestCase, override_settings
 
 from documents.models import Document
 
 from rag import history, intents, services
 from rag.prompts import EMPTY_CORPUS, NOT_FOUND
+from rag.providers.nvidia import NVIDIAProvider
 
 
 def chunk(text="Leave is accrued monthly.", page=2, index=4, score=-2.5):
@@ -17,6 +20,57 @@ def chunk(text="Leave is accrued monthly.", page=2, index=4, score=-2.5):
         "chunk_index": index,
         "text": text,
     }
+
+
+class NVIDIAProviderEmbeddingTest(TestCase):
+    def test_queries_use_query_input_type(self):
+        provider = NVIDIAProvider()
+        provider.client = MagicMock()
+        provider.client.embeddings.create.return_value = SimpleNamespace(
+            data=[SimpleNamespace(embedding=[0.1, 0.2])]
+        )
+
+        provider.generate_embedding("who is the owner")
+
+        provider.client.embeddings.create.assert_called_once_with(
+            model=settings.NVIDIA_EMBEDDING_MODEL,
+            input="who is the owner",
+            extra_body={"input_type": "query"},
+        )
+
+    def test_passages_use_passage_input_type(self):
+        provider = NVIDIAProvider()
+        provider.client = MagicMock()
+        provider.client.embeddings.create.return_value = SimpleNamespace(
+            data=[SimpleNamespace(embedding=[0.3, 0.4])]
+        )
+
+        provider.generate_embeddings_batch(["policy text", "contact details"])
+
+        provider.client.embeddings.create.assert_called_once_with(
+            model=settings.NVIDIA_EMBEDDING_MODEL,
+            input=["policy text", "contact details"],
+            extra_body={"input_type": "passage"},
+        )
+
+
+class ChunkDeduplicationTest(TestCase):
+    def test_duplicate_chunks_are_collapsed(self):
+        chunks = [
+            {"document_id": 1, "page_number": 2, "chunk_index": 0, "text": "alpha"},
+            {"document_id": 1, "page_number": 2, "chunk_index": 0, "text": "alpha"},
+            {"document_id": 1, "page_number": 3, "chunk_index": 1, "text": "beta"},
+        ]
+
+        deduped = services.deduplicate_chunks(chunks)
+
+        self.assertEqual(
+            deduped,
+            [
+                {"document_id": 1, "page_number": 2, "chunk_index": 0, "text": "alpha"},
+                {"document_id": 1, "page_number": 3, "chunk_index": 1, "text": "beta"},
+            ],
+        )
 
 
 class ClassifyRulesTest(TestCase):
@@ -337,6 +391,19 @@ class RoutingTest(TestCase):
                 }
             ],
         )
+
+    def test_deduplication_happens_before_reranking(self):
+        self.qdrant.search_chunks.return_value = [
+            chunk(text="alpha", index=0),
+            chunk(text="alpha", index=1),
+            chunk(text="beta", index=2),
+        ]
+        self.nvidia.rerank.side_effect = lambda question, chunks, **kwargs: chunks[:1]
+
+        services.answer_question("what is the leave policy")
+
+        _, rerank_chunks, *_ = self.nvidia.rerank.call_args.args
+        self.assertEqual([item["text"] for item in rerank_chunks], ["alpha", "beta"])
 
     def test_empty_rerank_reports_not_found_in_the_users_language(self):
         self.nvidia.rerank.return_value = []

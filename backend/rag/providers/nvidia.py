@@ -51,6 +51,7 @@ class NVIDIAProvider:
         response = self.client.embeddings.create(
             model=settings.NVIDIA_EMBEDDING_MODEL,
             input=text,
+            extra_body={"input_type": "query"},
         )
 
         embedding = response.data[0].embedding
@@ -63,6 +64,7 @@ class NVIDIAProvider:
         response = self.client.embeddings.create(
             model=settings.NVIDIA_EMBEDDING_MODEL,
             input=texts,
+            extra_body={"input_type": "passage"},
         )
         # print("RESPONSE BATCH: \n", response)
 

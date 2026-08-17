@@ -43,6 +43,27 @@ def recent_messages(history):
     )
 
 
+def deduplicate_chunks(chunks):
+    """Collapse duplicate passages before the reranker consumes the budget."""
+
+    deduped = []
+    seen = set()
+
+    for chunk in chunks:
+        text = (chunk.get("text") or "").strip()
+        if not text:
+            continue
+
+        key = " ".join(text.split()).lower()
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(chunk)
+
+    return deduped
+
+
 def rerank(question, results):
     """The reranker is the relevance gate; vector order is only a safety net."""
 
@@ -156,6 +177,9 @@ def knowledge_answer(question, decision, history=None):
         question=keywords,
     )
     logger.debug("Retrieved %d candidates", len(results))
+
+    results = deduplicate_chunks(results)
+    logger.debug("Kept %d unique chunks after deduplication", len(results))
 
     results = rerank(search_query, results)
     logger.debug("Kept %d chunks after reranking", len(results))
