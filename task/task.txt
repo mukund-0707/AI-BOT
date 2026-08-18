@@ -1,111 +1,43 @@
-Mujhe is poore codebase ka detailed deep-dive analysis chahiye:
+Hello! I'm Mukii
+I'm here to answer your questions.
 
-analysis yaha daaalna: `D:\mukund\AI bot\AI bot\task`
+hi
+Mukii
+Hello! How can I assist you today?
 
-Sabse pehle overall architecture, code flow, retrieval pipeline, prompts, data processing, chunking, embeddings, vector search, reranking, context construction aur final answer generation ko end-to-end analyse karo.
+muejh thodi inforamtion chahiye
+Mukii
+Could not connect to the vector database at http://localhost:6333. Start Qdrant and try again (docker start qdrant).
+muejh thodi inforamtion chahiye
+Mukii
+यह материал मुख्य रूप से तकनीकी प्रोजेक्ट अपडेट्स, गैइया (GAIA) डेटाबेस और डैश एप्लिकेशन के बारे में जानकारी प्रदान करता है, जिसमें कोड रीव्यू, डेटाबेस एक्सेस, एसक्यूएल क्वेरी और प्रोफेशनल स्किल डेवलपमेंट जैसे विषय शामिल हैं। इसके साथ ही, यह रिमोट (ReMo) एप्लिकेशन के बारे में तकनीकी विवरण, आवेदन इन्फ्रास्ट्रक्चर और ब्राजील साइट के रीचेबिलिटी टेस्ट की जानकारी भी देता है।
 
-Deep-dive complete hone ke baad specifically identify karo ki mera LLM retrieval-based answers properly kyun generate nahi kar raha. Abhi issues yeh hain:
+गैइया (GAIA) डेटाबेस और इसके वर्कफ्लो
+डैश एप्लिकेशन कोडबेस और इसकी संरचना
+गैइया कैप्चर लैम्ब्डा (gaia_capture_lambda.py) कार्यान्वयन
+ब्राजील साइट (in.gov.br) का रीचेबिलिटी टेस्ट
+रिमोट (ReMo) एप्लिकेशन रनबुक और इन्फ्रास्ट्रक्चर
+एसक्यूएल क्वेरी और डेटा वैलिडेशन
+कृपया उपरोक्त विषयों में से किसी एक पर अधिक जानकारी प्राप्त करने के लिए चुनें।
 
-* Answers mein important information miss ho jaati hai.
-* Relevant context hone ke baad bhi proper answer nahi milta.
-* Kabhi incomplete ya generic response aata hai.
-* Retrieval expected documents ya chunks return nahi karta.
-* Final response retrieved context ko effectively use nahi karta.
+are tune to hindi me de dia
+Mukii
+मुख्य अपडेट्स (6 जुलाई से 24 जुलाई, 2026 तक)
 
-Analysis ke through clearly determine karo ki actual issue kahan hai:
-
-* Prompt design mein
-* Retrieval flow mein
-* Chunking strategy mein
-* Embeddings ya vector search mein
-* Similarity threshold ya top-k configuration mein
-* Metadata filtering mein
-* Query transformation ya query expansion mein
-* Reranking logic mein
-* Context window management mein
-* LLM answer-generation logic mein
-* Code-level bugs ya implementation issues mein
-* Ya kisi aur architectural problem mein
-
-Sirf surface-level suggestions mat dena. Har important issue ke liye yeh explain karo:
-
-1. Issue exactly kya hai
-2. Code mein kahan present hai
-3. Yeh retrieval ya answer quality ko kaise impact kar raha hai
-4. Isko verify ya reproduce kaise kar sakte hain
-5. Recommended fix kya hoga
-6. Fix implement karne ke liye code-level changes kya honge
-
-Uske baad ek better end-to-end approach design karo jo retrieval answer quality improve kare. Is improved approach mein ideally yeh cover hona chahiye:
-
-* Better document ingestion
-* Cleaning aur preprocessing
-* Semantic chunking ya suitable chunk strategy
-* Chunk overlap strategy
-* Metadata design
-* Hybrid search, agar useful ho
-* Query rewriting ya multi-query retrieval
-* Reranking
-* Dynamic top-k
-* Context deduplication
-* Context prioritization
-* Prompt improvements
-* Citation ya source grounding
-* Hallucination control
-* “Answer not found” handling
-* Evaluation framework
-* Logging aur debugging
-* Retrieval-quality metrics
-* Answer-quality metrics
-
-Final output ko is structure mein dena:
-
-### 1. Current System Architecture
-
-Current codebase aur complete request-to-response flow.
-
-### 2. Major Issues Found
-
-Priority ke according: Critical, High, Medium aur Low.
-
-### 3. Root-Cause Analysis
-
-Retrieval aur final answer quality fail hone ke exact reasons.
-
-### 4. Code-Level Findings
-
-Relevant files, functions, classes aur logic ke references ke saath.
-
-### 5. Prompt Analysis
-
-Current prompts ki problems aur improved prompts.
-
-### 6. Recommended Architecture
-
-Better retrieval aur answer-generation pipeline.
-
-### 7. Implementation Plan
-
-Step-by-step changes, preferably phases mein.
-
-### 8. Suggested Code Changes
-
-Required patches, pseudocode ya updated implementation examples.
-
-### 9. Testing and Evaluation Plan
-
-Before-versus-after quality objectively measure karne ka method.
-
-### 10. Final Prioritized Action Plan
-
-Sabse pehle kya fix karna hai, expected impact aur effort ke saath.
-
-Important instructions:
-
-* Assumptions kam se kam rakho.
-* Har conclusion ko code evidence ke basis par explain karo.
-* Sirf prompt ko blame mat karo; complete system ko analyse karo.
-* Existing approach ki limitations aur trade-offs bhi mention karo.
-* Quick fixes aur long-term scalable solution dono provide karo.
-* Jahan possible ho, exact code improvements ya replacement logic create karo.
-* Analysis ke end mein ek clear recommended version of the complete RAG/retrieval flow zaroor do.
+6 जुलाई, 2026: Homologa概念 और GAIA डेटाबेस की समझ हासिल की। GAIA एक्सेस के लिए आवश्यक बैकेंड कॉन्फ़िगरेशन और परमिशन्स की जांच की। gaia_capture_lambda.py को समज्हने के लिए समीक्षा की। Dash एप्लिकेशन कोडबेस का विश्लेषण जारी रखा।
+8 जुलाई, 2026: GAIA कोडबेस में आवश्यक बदलावों की पहचान। प्रोफेशनल स्किल्स में सुधार (इफेक्टिव कम्युनिकेशन, प्रोजेक्ट अपडेट्स, डेली स्टेटस रिपोर्ट्स)। SQL क्वेरीज़ का अभ्यास।
+9 जुलाई, 2026: gaia_capture_lambda.py और loader.py की नवीनतम कार्यान्वयन समीक्षा। Dash एप्लिकेशन में homologa_acti_code फील्ड जोड़ा। डेटा विश्लेषण और फील्ड मैपिंग की पुष्टि।
+10 जुलाई, 2026: gaia_capture_lambda.py का व्यावहारिक विश्लेषण। 13 इवेंट्स स्किप होने की जांच (डुप्लिकेट रिकॉर्ड्स के कारण)। Dash एप्लिकेशन में एक्टिव सब्स्टेंस कंसेंट्रेशन इश्यू का समाधान।
+13 जुलाई, 2026: Homologa डेटा वैलिडेशन। Unspecified Substance रिकॉर्ड्स को फिल्टर करने के लिए मिनिमल कोड चेंजेस। एरर हैंडलिंग को जोड़ा।
+14 जुलाई, 2026: RMO: Homologa / GAIA Capture डॉक्यूमेंट में Mermaid डायाग्राम जोड़ा। RegistrationMonitoring - ReMo Runbook को अपडेट किया। Terraform ट्यूटोरियल देखा और SQL प्रैक्टिस की।
+15 जुलाई, 2026: AI Document Chatbot के लिए RAG आर्किटेक्चर फाइनलाइज़। डॉक्यूमेंट प्रोसेसिंग पाइपलाइन सेट अप की। NVIDIA NIM और Qdrant वेक्टर स्टोरेज इंटीग्रेट किया।
+20 जुलाई, 2026: Syngenta डेटा वेरिफाई किया। Capture_runs इश्यू का समाधान (शेयर्ड UUID के कारण)। मार्केट डेटा प्रोवाइडर्स की तुलना और डॉक्यूमेंटेशन।
+21 जुलाई, 2026: SharePoint capture_runs इश्यू फिक्स। Composition_unit फील्ड की जांच (सोर्स डेटा में अनुपस्थित)। Brazil प्रॉक्सी टेस्ट (लोकल वर्किंग, AWS पर टाइमआउट इश्यू)।
+22 जुलाई, 2026: अनावश्यक कोड, मॉड्यूल, और डिपेंडेंसियों को रिमूव किया। लोकल माइग्रेशन यूटिलिटी (apply_local.py) सेट अप किया।
+23 जुलाई, 2026: RMO Dashboard और rmo-backend की एंड-टू-एंड टेस्टिंग। डैशबोर्ड इश्यूज़ (ग्रिड सॉर्टिंग, पैगिनेशन डुप्लिकेट्स, डेटा लॉस) का समाधान।
+24 जुलाई, 2026: Dash UI में सुधार (एडिट मोडल्स, Onboarding सेक्शन, नेविगेशन हाइलाइट)। कोडबेस से अनावश्यक कोड और डिपेंडेंसियों को रिमूव किया।
+Sources
+My Update report.txt · Page unknown
+are bhai me tujeh kya bol raha hu tu to alg hi response de raha h mereko response hindi me chahiye
+Mukii
+माफ़ कीजिए, मैं समझा नहीं कि आप क्या पूछ रहे हैं। कृपया अपना संदेश स्पष्ट करें ताकि मैं आपकी मदद कर सकूं। मैं आपको हिंदी में ही जवाब दे रहा हूं, जैसा कि आप चाहते हैं। कृपया अपना प्रश्न या संदेश फिर से बताएं।

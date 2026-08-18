@@ -137,14 +137,19 @@ class DocumentService:
 
     @staticmethod
     def delete_document(document):
-        try:
-            qdrant = QdrantProvider()
-            qdrant.delete_chunks(document.id)
+        """Row first, vectors second - the failure modes are not symmetrical.
 
-            if document.file:
-                document.file.delete(save=False)
+        Vectors left behind without their row are orphans, and
+        `reindex_documents --purge-orphans` already clears those. A row left
+        behind without its vectors is undetectable: the document still reports
+        ready and simply answers nothing.
+        """
 
-            document.delete()
-        except Exception as exc:
-            print(f"Error deleting document: {exc}")
-            raise
+        document_id = document.id
+
+        if document.file:
+            document.file.delete(save=False)
+
+        document.delete()
+
+        QdrantProvider().delete_chunks(document_id)

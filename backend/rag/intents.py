@@ -9,6 +9,10 @@ reply in, and an English query to search with.
 Rules run first because they are free and cover the common traffic. The model is
 asked only about what the rules could not place, and any failure there falls back
 to the pre-existing behaviour: treat it as a question.
+
+The language half of that decision lives in `rag.language`, which owns it
+outright. The names are re-exported here because routing is where callers expect
+to find them.
 """
 
 import json
@@ -17,6 +21,14 @@ import re
 
 from django.conf import settings
 
+from rag.language import (  # noqa: F401  - re-exported for callers of `intents`
+    EN,
+    HI,
+    HINGLISH,
+    LANGUAGES,
+    detect_language,
+    reconcile_language,
+)
 from rag.prompts import (
     INTENT_PROMPT,
     build_intent_prompt,
@@ -29,35 +41,6 @@ OVERVIEW = "overview"
 KNOWLEDGE = "knowledge"
 
 INTENTS = {SMALL_TALK, OVERVIEW, KNOWLEDGE}
-
-EN = "en"
-HINGLISH = "hinglish"
-HI = "hi"
-
-LANGUAGES = {EN, HINGLISH, HI}
-
-DEVANAGARI = re.compile(
-    r"[ऀ-ॿ] | in\s+hindi | in\s+devanagari | hindi | hindi\s+me\s+do",
-    re.IGNORECASE | re.VERBOSE,
-)
-
-# Hindi function words (Latin script) used for Hinglish detection.
-HINGLISH_MARKERS = re.compile(
-    r"""\b(
-        mujhe | mera | meri | mere | hamara | aap | aapka | tum
-        | kya | kyu | kyun | kyon | kaise | kaisa | kaisi | kitna | kitne
-        | kahan | kaun | kab | konsa | kaunsa
-        | hai | hain | tha | thi | hoga | hogi | hota | hoti
-        | karta | karti | karna | karne | kare | karo
-        | nahi | nhi | naa | mat
-        | chahiye | chaiye | batao | bataiye | bata | samjhao | samjha
-        | dijiye | dedo | thoda | thodi | kuch | koi | sirf | bhi | wala | wali | hinglish\s+me
-        | iska | iske | isme | uska | uske | usme | yeh | woh | vah
-        | baare | bare | matlab | jankari | jaankari | jaanana | janna
-        | acha | accha | theek | thik | bilkul | zaroori | zarurat | hinglish | in\s+hinglish 
-    )\b""",
-    re.IGNORECASE | re.VERBOSE,
-)
 
 # Match the whole message only; content queries still reach retrieval.
 SMALL_TALK_PATTERN = re.compile(
@@ -80,6 +63,22 @@ SMALL_TALK_PATTERN = re.compile(
             (\s+(so\s+much|a\s+lot|mukii|bhai))?
         | (bye|goodbye|good\s*night|see\s+(you|ya)|take\s+care|gn|alvida)
         | (ok(ay)?|hmm+|cool|nice|great|awesome|theek\s+hai|thik\s+hai)
+        # Telling the assistant who you are, and asking it to say so back.
+        # Both are answered from the conversation, never from the documents, so
+        # routing them to retrieval is what produces "I couldn't find
+        # information about this in the knowledge base".
+        #
+        # "naam" and "name" are both spelled here on purpose: the same user
+        # switches between them mid-thread.
+        | (mera|mere)\s+(naam|name)\s+\w+(\s+(hai|he|h))?
+        | (mujhe\s+)?(mera|mere)\s+(naam|name)\s+(bata|batao|bataiye|yaad\s+\w+)
+        | my\s+(naam|name)(\s+is\s+\w+)?
+        | (i\s+am|i'?m)\s+\w+
+        | (mujhe|muje)\s+\w+\s+(bolte|bolo|kehte|kehta)\s*(hain|hai|h)?
+        | (what|whats|what'?s)\s+(is\s+)?my\s+(naam|name)
+        | (tell|say)\s+me\s+my\s+(naam|name)
+        | do\s+(you|u)\s+(remember|know)\s+my\s+(naam|name)
+        | (kya\s+)?(tumhe|tujhe|aapko)\s+mera\s+(naam|name)\s+yaad\s+(hai|he|h)
     )$""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -129,18 +128,6 @@ def normalise(message):
     return re.sub(r"\s+", " ", str(message or "")).strip().strip(TRIM).strip()
 
 
-def detect_language(message):
-    """Script first, then Hindi function words. Content words are never enough."""
-
-    if DEVANAGARI.search(message):
-        return HI
-
-    if HINGLISH_MARKERS.search(message):
-        return HINGLISH
-
-    return EN
-
-
 def classify_by_rules(message):
     """Returns an intent, or None when the message needs a closer look."""
 
@@ -187,8 +174,7 @@ def parse_model_decision(raw, message, language):
         raise ValueError(f"unknown intent: {intent!r}")
 
     model_language = str(payload.get("language", "")).strip().lower()
-    # The rule-based detector wins on script, which it cannot get wrong.
-    language = model_language if model_language in LANGUAGES else language
+    language = reconcile_language(language, model_language)
 
     search_query = str(payload.get("search_query") or "").strip()
 

@@ -6,6 +6,7 @@ from documents.models import Document
 
 from rag import history as history_window
 from rag import intents
+from rag.language import localised
 from rag.prompts import (
     EMPTY_CORPUS,
     NOT_FOUND,
@@ -26,10 +27,6 @@ logger = logging.getLogger(__name__)
 
 nvidia = NVIDIAProvider()
 qdrant = QdrantProvider()
-
-
-def localised(table, language):
-    return table.get(language, table[intents.EN])
 
 
 def recent_messages(history):
@@ -160,9 +157,19 @@ def overview_answer(language):
     }
 
 
-def knowledge_answer(question, decision, history=None):
+def retrieve(question, decision):
+    """Everything between a routed question and the prompt that answers it.
 
-    language = decision["language"]
+    Both answer paths need exactly this, and the two copies had already started
+    to drift - the streaming one grew its own not-found handling while the other
+    went through `is_no_answer`. One copy means a retrieval change lands on both
+    at once.
+
+    Returns `(results, prompt)`. Empty results mean nothing cleared the
+    reranker; the caller decides what to say about that, because the streaming
+    path has to say it differently.
+    """
+
     search_query = decision["search_query"] or question
 
     question_embedding = nvidia.generate_embedding(search_query)
@@ -185,7 +192,7 @@ def knowledge_answer(question, decision, history=None):
     logger.debug("Kept %d chunks after reranking", len(results))
 
     if not results:
-        return not_found(language)
+        return [], None
 
     chunks = qdrant.with_neighbours(results)
     logger.debug("Expanded to %d chunks with neighbours", len(chunks))
@@ -193,8 +200,20 @@ def knowledge_answer(question, decision, history=None):
     prompt = build_prompt(
         question=question,
         chunks=chunks,
-        language=language,
+        language=decision["language"],
     )
+
+    return results, prompt
+
+
+def knowledge_answer(question, decision, history=None):
+
+    language = decision["language"]
+
+    results, prompt = retrieve(question, decision)
+
+    if not results:
+        return not_found(language)
 
     answer = nvidia.generate_answer(
         SYSTEM_PROMPT,
@@ -209,6 +228,64 @@ def knowledge_answer(question, decision, history=None):
         "answer": answer,
         "sources": build_sources(results),
     }
+
+
+def stream_answer_question(question, history=None):
+    """Same routing and retrieval as answer_question, but streams the answer.
+
+    Yields a sequence of strings:
+      - token strings as the LLM produces them
+      - a single final dict  {"sources": [...], "answer": "<full assembled text>"}
+        so the caller can store the completed answer in history.
+
+    Small talk and overview fall back to the non-streaming path and yield the
+    full answer as one token followed by the sources dict.
+    """
+
+    messages = recent_messages(history)
+    decision = intents.classify(question, nvidia, history=messages)
+
+    # Small talk and overview do not stream — they are short and fast already.
+    if decision["intent"] == intents.SMALL_TALK:
+        result = small_talk_answer(question, decision["language"], messages)
+        yield result["answer"]
+        yield {"sources": result["sources"], "answer": result["answer"]}
+        return
+
+    if decision["intent"] == intents.OVERVIEW:
+        result = overview_answer(decision["language"])
+        yield result["answer"]
+        yield {"sources": result["sources"], "answer": result["answer"]}
+        return
+
+    language = decision["language"]
+
+    results, prompt = retrieve(question, decision)
+
+    if not results:
+        not_found_answer = localised(NOT_FOUND, language)
+        yield not_found_answer
+        yield {"sources": [], "answer": not_found_answer}
+        return
+
+    assembled = []
+
+    for token in nvidia.stream_answer(
+        SYSTEM_PROMPT,
+        prompt,
+        history=history_window.user_turns(messages),
+    ):
+        assembled.append(token)
+        yield token
+
+    full_answer = "".join(assembled).strip()
+
+    if is_no_answer(full_answer):
+        not_found_answer = localised(NOT_FOUND, language)
+        yield {"sources": [], "answer": not_found_answer, "replace": True}
+        return
+
+    yield {"sources": build_sources(results), "answer": full_answer}
 
 
 def is_no_answer(answer):

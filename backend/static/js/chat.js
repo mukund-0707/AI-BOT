@@ -179,20 +179,110 @@ const Chat = {
         UI.setSending(true);
         this.renderThinkingMessage();
 
-        try {
-            const result = await Api.askQuestion(AppState.documentId, question);
+        // Create the bot bubble early — tokens will be appended into it.
+        let streamNode = null;
+        let streamBody = null;
+        let rawTokens = "";
 
+        // Markdown.render re-parses the whole answer, so doing it per token is
+        // quadratic and visibly janky on a long reply. One render per frame
+        // looks identical and costs a fraction of the work.
+        let pendingFrame = null;
+
+        const paint = () => {
+            pendingFrame = null;
+            streamBody.innerHTML = Markdown.render(rawTokens);
+            UI.scrollToBottom();
+        };
+
+        const cancelPendingPaint = () => {
+            if (pendingFrame !== null) {
+                cancelAnimationFrame(pendingFrame);
+                pendingFrame = null;
+            }
+        };
+
+        const onToken = (token) => {
+            // Remove the thinking indicator on first token.
             this.removeThinkingMessage();
-            this.renderAIMessage(
-                result.answer || "No answer received.",
-                result.sources || []
-            );
-        } catch (error) {
-            this.removeThinkingMessage();
-            this.renderStatusMessage(error.message, "error");
-        } finally {
+
+            if (!streamNode) {
+                streamNode = this.appendNode(
+                    "message ai-message",
+                    `
+                    ${this.botAvatarHtml(true)}
+                    <div class="message-content">
+                        <div class="message-body"></div>
+                    </div>
+                    `
+                );
+                streamBody = streamNode.querySelector(".message-body");
+            }
+
+            rawTokens += token;
+
+            if (pendingFrame === null) {
+                pendingFrame = requestAnimationFrame(paint);
+            }
+        };
+
+        const onDone = ({ answer, sources }) => {
+            // A queued frame still holds the partial text and would paint over
+            // the final answer after it lands.
+            cancelPendingPaint();
+
+            // Replace the streamed content with the final authoritative answer
+            // (handles the replace:true case where the answer was NO_ANSWER).
+            if (streamBody) {
+                streamBody.innerHTML = Markdown.render(answer);
+            } else {
+                // Stream never emitted tokens (e.g. small talk fell back).
+                this.removeThinkingMessage();
+                streamNode = this.appendNode(
+                    "message ai-message",
+                    `
+                    ${this.botAvatarHtml(true)}
+                    <div class="message-content">
+                        <div class="message-body">${Markdown.render(answer)}</div>
+                    </div>
+                    `
+                );
+            }
+
+            // Append sources block if present.
+            if (sources && sources.length > 0) {
+                const items = sources
+                    .map((source) => {
+                        const page =
+                            source.page_number != null
+                                ? `Page ${source.page_number}`
+                                : "Page unknown";
+                        return `<li>${this.escapeHtml(source.document_name)} · ${page}</li>`;
+                    })
+                    .join("");
+
+                const sourcesDiv = document.createElement("div");
+                sourcesDiv.className = "message-sources";
+                sourcesDiv.innerHTML = `
+                    <span class="message-sources-label">Sources</span>
+                    <ul>${items}</ul>
+                `;
+                streamNode.querySelector(".message-content").appendChild(sourcesDiv);
+            }
+
+            UI.scrollToBottom();
             UI.setSending(false);
-        }
+        };
+
+        const onError = (message) => {
+            cancelPendingPaint();
+            this.removeThinkingMessage();
+            if (streamNode) streamNode.remove();
+            this.renderStatusMessage(message, "error");
+            UI.setSending(false);
+        };
+
+        await Api.askQuestionStream(question, onToken, onDone, onError);
     },
 };
 

@@ -8,7 +8,7 @@ from documents.models import Document
 
 from rag import history, intents, services
 from rag.prompts import EMPTY_CORPUS, NOT_FOUND
-from rag.providers.nvidia import NVIDIAProvider
+from rag.providers.nvidia import NVIDIAProvider, ReasoningFilter
 
 
 def chunk(text="Leave is accrued monthly.", page=2, index=4, score=-2.5):
@@ -52,6 +52,62 @@ class NVIDIAProviderEmbeddingTest(TestCase):
             input=["policy text", "contact details"],
             extra_body={"input_type": "passage"},
         )
+
+
+class ReasoningFilterTest(TestCase):
+    """A streamed tag arrives in pieces, so per-delta matching is not enough.
+
+    The model emits "<th" and then "ink>". Searching each delta on its own
+    never finds the tag, and the whole reasoning trace reaches both the screen
+    and - because the caller assembles the answer from what is yielded - the
+    stored conversation.
+    """
+
+    def filtered(self, deltas):
+        reasoning = ReasoningFilter()
+
+        return "".join(reasoning.feed(delta) for delta in deltas) + reasoning.flush()
+
+    def test_plain_text_passes_through(self):
+        self.assertEqual(self.filtered(["Leave is ", "12 days."]), "Leave is 12 days.")
+
+    def test_a_whole_tag_in_one_delta(self):
+        self.assertEqual(
+            self.filtered(["<think>weighing it up</think>", "Real answer."]),
+            "Real answer.",
+        )
+
+    def test_a_tag_split_across_deltas(self):
+        self.assertEqual(
+            self.filtered(
+                ["<th", "ink>", "weighing ", "it up", "</th", "ink>", "Real answer."]
+            ),
+            "Real answer.",
+        )
+
+    def test_one_character_at_a_time(self):
+        source = "before<think>hidden</think>after"
+
+        self.assertEqual(self.filtered(list(source)), "beforeafter")
+
+    def test_text_around_the_tag_survives(self):
+        self.assertEqual(
+            self.filtered(["Answer: <think>hm</think> 12 days."]),
+            "Answer:  12 days.",
+        )
+
+    def test_an_unclosed_tag_drops_the_trace(self):
+        """A trace the model never came out of is not an answer."""
+
+        self.assertEqual(
+            self.filtered(["Partial ", "<think>", "still going"]), "Partial "
+        )
+
+    def test_a_lone_angle_bracket_is_not_swallowed(self):
+        self.assertEqual(self.filtered(["a < b"]), "a < b")
+
+    def test_a_trailing_partial_tag_is_released_on_flush(self):
+        self.assertEqual(self.filtered(["done <th"]), "done <th")
 
 
 class ChunkDeduplicationTest(TestCase):
@@ -178,6 +234,92 @@ class ClassifyRulesTest(TestCase):
             with self.subTest(message=message):
                 self.assertEqual(self.classify(message)["language"], language)
 
+    def test_what_the_user_told_you_is_not_a_retrieval_question(self):
+        """The documents cannot answer these, so search only says "not found".
+
+        Both spellings appear because the same user switches between them
+        mid-thread - "mera naam" one turn, "mera name" the next.
+        """
+
+        messages = [
+            "my name is Riya",
+            "I am Riya",
+            "mera naam Riya hai",
+            "mujhe Riya bolte hain",
+            "what is my name",
+            "What is My name?",
+            "whats my name",
+            "my name?",
+            "tell me my name",
+            "do you remember my name",
+            "Mera name kya he",
+            "mera naam kya hai",
+            "mujhe mera naam batao",
+            "tumhe mera name yaad hai",
+        ]
+
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertEqual(
+                    self.classify(message)["intent"],
+                    intents.SMALL_TALK,
+                )
+
+    def test_a_document_question_that_mentions_a_name_still_retrieves(self):
+        """The guard on the rule above: "name" is also a document word."""
+
+        messages = [
+            "my name in the employee register",
+            "what is the naming convention",
+            "I am looking for the notice period",
+            "tell me my leave balance",
+            "mera leave kitna hai",
+        ]
+
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertEqual(
+                    self.classify(message)["intent"],
+                    intents.KNOWLEDGE,
+                )
+
+    def test_english_questions_are_not_flipped_by_one_ambiguous_word(self):
+        """Every one of these is a plain English question about a document.
+
+        Each contains a word that is also Hindi, which used to be enough on its
+        own - and replying to an English question in Hinglish is a louder
+        failure than missing a Hinglish one.
+        """
+
+        messages = (
+            "what is a door mat",
+            "the koi pond maintenance schedule",
+            "Hai Corporation revenue",
+            "show me the bare minimum requirements",
+            "this is a mere formality",
+        )
+
+        for message in messages:
+            with self.subTest(message=message):
+                self.assertEqual(self.classify(message)["language"], intents.EN)
+
+    def test_two_ambiguous_words_together_are_still_hinglish(self):
+        self.assertEqual(
+            self.classify("mere paas koi jankari nahi")["language"],
+            intents.HINGLISH,
+        )
+
+    def test_naming_hindi_is_not_writing_in_it(self):
+        self.assertEqual(
+            self.classify("what is the hindi translation policy")["language"],
+            intents.EN,
+        )
+
+    def test_asking_for_hindi_output_still_switches(self):
+        for message in ("answer in hindi", "hindi me batao"):
+            with self.subTest(message=message):
+                self.assertEqual(self.classify(message)["language"], intents.HI)
+
     def test_knowledge_search_query_defaults_to_the_question(self):
         decision = self.classify("what is the notice period")
 
@@ -253,6 +395,41 @@ class ClassifyModelTest(TestCase):
 
         self.assertEqual(decision["intent"], intents.KNOWLEDGE)
         self.assertEqual(decision["source"], "fallback")
+
+    def test_the_model_cannot_switch_a_latin_message_to_devanagari(self):
+        """The bug this guards: one "hi" from the classifier, and an English
+        thread answers in Devanagari.
+
+        No Devanagari in the message is proof the user did not type Hindi, so
+        the model does not get to overrule it.
+        """
+
+        for detected in (intents.EN, intents.HINGLISH):
+            with self.subTest(detected=detected):
+                self.assertEqual(
+                    intents.reconcile_language(detected, intents.HI),
+                    detected,
+                )
+
+    def test_devanagari_in_the_message_settles_it(self):
+        for claimed in (intents.EN, intents.HINGLISH):
+            with self.subTest(claimed=claimed):
+                self.assertEqual(
+                    intents.reconcile_language(intents.HI, claimed),
+                    intents.HI,
+                )
+
+    def test_the_model_still_decides_english_against_hinglish(self):
+        """The one call it makes better - word choice, not characters."""
+
+        self.assertEqual(
+            intents.reconcile_language(intents.EN, intents.HINGLISH),
+            intents.HINGLISH,
+        )
+        self.assertEqual(
+            intents.reconcile_language(intents.HINGLISH, intents.EN),
+            intents.EN,
+        )
 
     def test_unknown_language_keeps_the_detected_one(self):
         provider = self.provider(

@@ -150,7 +150,7 @@ class QdrantProvider:
         self,
         question_embedding,
         question,
-        limit=24,
+        limit=None,
     ):
         """Fetch candidates for the reranker - recall matters here, not order.
 
@@ -158,6 +158,9 @@ class QdrantProvider:
         number around 7th; the keyword side puts it 1st. Reciprocal Rank Fusion
         runs server-side, so neither retriever has to win outright.
         """
+
+        if limit is None:
+            limit = getattr(settings, "RAG_SEARCH_CANDIDATES", 24)
 
         try:
             results = self.client.query_points(

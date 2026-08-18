@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import AskQuestionView
 from .views import ResetConversationView
+from .views import StreamAskView
 from .views import chatbot
 
 urlpatterns = [
@@ -9,6 +10,11 @@ urlpatterns = [
         "ask/",
         AskQuestionView.as_view(),
         name="ask-question",
+    ),
+    path(
+        "ask/stream/",
+        StreamAskView.as_view(),
+        name="ask-question-stream",
     ),
     path(
         "new/",

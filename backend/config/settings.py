@@ -173,24 +173,28 @@ QDRANT_COLLECTION_NAME = os.getenv(
 
 
 # Chunks handed to the model after reranking.
-RAG_TOP_N = 6
+RAG_TOP_N = 5  # was 6 — one fewer passage, slightly smaller prompt
+
+# How many candidates Qdrant returns before reranking.
+# Fewer candidates = faster rerank API call.
+RAG_SEARCH_CANDIDATES = 16  # was 24 (hardcoded) — now configurable
 
 # Calibrated on evaluation data. Recalibrate if the reranker model or corpus changes.
 RAG_RERANK_FLOOR = -11.0
 
 # Query understanding. Regex always runs; this only enables LLM fallback.
 RAG_ENABLE_LLM_INTENT = True
-RAG_INTENT_MAX_TOKENS = 80
-RAG_INTENT_TIMEOUT = 10
+RAG_INTENT_MAX_TOKENS = 60  # was 80 — JSON output needs fewer tokens
+RAG_INTENT_TIMEOUT = 5  # was 10 — fail fast, fallback handles it
 
 # Overview uses opening chunks from indexed documents instead of topic search.
-RAG_OVERVIEW_MAX_DOCUMENTS = 5
+RAG_OVERVIEW_MAX_DOCUMENTS = 4  # was 5
 RAG_OVERVIEW_DOC_CHUNKS = 3
 
 # Conversation memory. The session keeps more than the model sees: storing a
 # message is free, sending one is prompt on every call.
-RAG_HISTORY_LIMIT = 20  # messages handed to the model, both roles
-RAG_HISTORY_STORE_LIMIT = 40  # messages kept in the session
-RAG_HISTORY_CHAR_BUDGET = 6000  # total characters of history per request
-RAG_HISTORY_MESSAGE_CHARS = 700  # per-message clip before budgeting
-RAG_INTENT_HISTORY_MESSAGES = 6  # turns shown to the classifier
+RAG_HISTORY_LIMIT = 10  # was 20 — fewer turns = smaller prompt = faster
+RAG_HISTORY_STORE_LIMIT = 40  # messages kept in the session (unchanged)
+RAG_HISTORY_CHAR_BUDGET = 3000  # was 6000 — tighter budget, less prompt bloat
+RAG_HISTORY_MESSAGE_CHARS = 500  # was 700 — clip older messages harder
+RAG_INTENT_HISTORY_MESSAGES = 4  # was 6 — classifier needs less context
