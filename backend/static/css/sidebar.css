@@ -1,14 +1,21 @@
 .sidebar{
 
-    background:var(--sidebar-bg);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 26px;
+    display: flex;
+    flex-direction: column;
 
-    border-right:1px solid var(--border);
+}
 
-    padding:26px;
+html[data-theme="dark"] .sidebar{
 
-    display:flex;
-
-    flex-direction:column;
+    border-right: 1px solid transparent;
+    background-image:
+        linear-gradient(var(--sidebar-bg), var(--sidebar-bg)),
+        linear-gradient(180deg, rgba(124,58,237,0.25) 0%, rgba(124,58,237,0.05) 50%, transparent 100%);
+    background-origin: padding-box, border-box;
+    background-clip: padding-box, border-box;
 
 }
 
@@ -16,127 +23,127 @@
 
 .sidebar-brand{
 
-    display:flex;
-
-    align-items:center;
-
-    gap:14px;
-
-    margin-bottom:45px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 45px;
 
 }
 
 .brand-logo{
 
-    width:54px;
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    background: #F3F0FF;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
 
-    height:54px;
+}
 
-    border-radius:18px;
+html[data-theme="dark"] .brand-logo{
 
-    background:#F3F0FF;
-
-    display:flex;
-
-    justify-content:center;
-
-    align-items:center;
-
-    overflow:hidden;
-
-    flex-shrink:0;
+    background: rgba(124,58,237,0.15);
+    border: 1px solid rgba(124,58,237,0.25);
 
 }
 
 .brand-logo-img{
 
-    width:100%;
-
-    height:100%;
-
-    object-fit:cover;
-
-    display:block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 
 }
 
 .brand-content h2{
 
-    font-size:21px;
-
-    font-weight:700;
+    font-size: 21px;
+    font-weight: 700;
 
 }
 
 .brand-content p{
 
-    margin-top:4px;
-
-    font-size:13px;
-
-    color:var(--text-light);
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-light);
 
 }
 
 /* ---------------- Navigation ---------------- */
 
 .sidebar-nav{
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
-
 
 .nav-item{
 
-    width:100%;
+    width: 100%;
+    border: none;
+    background: #F5F6FB;
+    border-radius: 14px;
+    padding: 15px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-size: 15px;
+    font-weight: 600;
 
-    border:none;
+}
 
-    background:#F5F6FB;
+html[data-theme="dark"] .nav-item{
 
-    border-radius:14px;
-
-    padding:15px 18px;
-
-    display:flex;
-
-    align-items:center;
-
-    gap:14px;
-
-    cursor:pointer;
-
-    transition:var(--transition);
-
-    font-size:15px;
-
-    font-weight:600;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text);
 
 }
 
 #newChatButton{
-    margin-top:8px;
+    margin-top: 8px;
 }
 
 .nav-item:hover{
 
-    background:#ECE8FF;
+    background: #ECE8FF;
+
+}
+
+html[data-theme="dark"] .nav-item:hover{
+
+    background: rgba(124,58,237,0.12);
+    border-color: rgba(124,58,237,0.2);
 
 }
 
 .nav-item.active{
 
-    background:#EEE8FF;
+    background: #EEE8FF;
+    color: #6D28D9;
 
-    color:#6D28D9;
+}
+
+html[data-theme="dark"] .nav-item.active{
+
+    background: rgba(124,58,237,0.18);
+    color: #C4B5FD;
+    border-color: rgba(124,58,237,0.3);
 
 }
 
 .nav-icon{
 
-    font-size:18px;
+    font-size: 18px;
 
 }
 
@@ -144,44 +151,44 @@
 
 .sidebar-bottom{
 
-    margin-top:auto;
+    margin-top: auto;
 
 }
 
 .welcome-card{
 
-    background:var(--background);
+    background: var(--background);
+    border-radius: 20px;
+    padding: 18px;
+    display: flex;
+    gap: 14px;
 
-    border-radius:20px;
+}
 
-    padding:18px;
+html[data-theme="dark"] .welcome-card{
 
-    display:flex;
-
-    gap:14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
 
 }
 
 .welcome-icon{
 
-    font-size:22px;
+    font-size: 22px;
 
 }
 
 .welcome-card h4{
 
-    margin-bottom:5px;
-
-    font-size:15px;
+    margin-bottom: 5px;
+    font-size: 15px;
 
 }
 
 .welcome-card p{
 
-    color:var(--text-light);
-
-    font-size:13px;
-
-    line-height:1.5;
+    color: var(--text-light);
+    font-size: 13px;
+    line-height: 1.5;
 
 }

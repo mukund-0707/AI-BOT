@@ -34,7 +34,6 @@
     /* ===== Shadow ===== */
 
     --shadow-sm: 0 4px 12px rgba(0,0,0,.05);
-
     --shadow-md: 0 8px 24px rgba(0,0,0,.08);
 
     /* ===== Animation ===== */
@@ -45,20 +44,19 @@
 
 html[data-theme="dark"]{
 
-    --background: #0F1220;
+    --background: #06070F;
 
-    --sidebar-bg: #171B2D;
+    --sidebar-bg: #0E1018;
 
-    --card-bg: #1E2235;
+    --card-bg: #13161F;
 
-    --border: #2A3047;
+    --border: #1E2235;
 
     --text: #F3F4F6;
 
     --text-light: #A5ADCB;
 
-    --shadow-sm: 0 4px 12px rgba(0,0,0,.25);
-
-    --shadow-md: 0 8px 24px rgba(0,0,0,.35);
+    --shadow-sm: 0 4px 12px rgba(0,0,0,.4);
+    --shadow-md: 0 8px 24px rgba(0,0,0,.5);
 
 }
